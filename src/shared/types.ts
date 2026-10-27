@@ -253,6 +253,18 @@ export interface GradeResult {
   reviewRequested: boolean;
   /** 清洗过程中发现并修正的问题，进日志 */
   warnings: string[];
+  /**
+   * 这份**没有被评分**（图片质量不合格等），而不是"学生得了 0 分"。
+   *
+   * 为什么必须单列一个字段：两者在数据上都是 `score = 0`，
+   * 不可区分。若不区分，一份看不清的卷子会被当成真实 0 分记录进
+   * 平台、统计与准确率计算——而且看起来完全正常（§6.1）。
+   *
+   * 置此标志时约定：`confidence` 为 0、`reviewRequested` 为 true、
+   * `warnings` 非空、`hitPoints`/`missedPoints` 为空数组
+   * （不得编造"命中了某点"，那等于捏造评分过程）。
+   */
+  ungradable?: boolean;
   /** 提示词版本指纹，写入评测记录 */
   promptVersion: string;
   promptHash: string;

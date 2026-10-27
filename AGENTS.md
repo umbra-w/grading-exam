@@ -31,9 +31,10 @@
 这条纪律已经抓出一批真实问题，见 §6.4。具体表现：
 
 - 未实现的按钮**保持 `disabled`** 并写明原因，不做成"点了没反应"
-- 不伪造成功响应。`auto:start/stop/confirm` 的**执行层**尚未接通，
-  通道明确返回 `{ok:false, error:'Phase 5 未实现'}`，而不是假装跑起来了
-  （决策层 `autoloop.ts` 已完成并有 37 项单测，但两者还没接线）
+- 不伪造成功响应。`auto:start/stop/confirm` 的**执行层已接通**
+  （薄绑定在 `page/auto-runner.ts`），但**依赖真实 CDP、本机无法验证**——
+  所以界面必须把"未在真机验证过"写出来，不能让它看起来像
+  "已可用的无人值守阅卷"。未验证 ≠ 不可用，但更不等于已验证。
 - 能力边界上不写"支持所有平台"这类话
 - 指标未标定时就说未标定（`0.75` 的置信度阈值目前仍是**未经标定的经验值**）
 
@@ -113,6 +114,10 @@ src/
 │     ├─ browser.ts        阅卷窗口生命周期（⚠ 未在真机验证）
 │     ├─ cdp.ts            底层 CDP：click / insertText / eval（⚠ 未在真机验证）
 │     ├─ geometry.ts     ★ 坐标换算、错误分类、提交状态机（纯逻辑）
+│     ├─ autoloop.ts     ★ 单份卷子的填分重试状态机（纯逻辑）
+│     ├─ auto-orchestrator.ts ★ 连续阅卷的状态机与安全不变量（纯逻辑）
+│     ├─ auto-runner.ts    把上面那个状态机的动作翻译成 CDP 调用（⚠ 未在真机验证）
+│     ├─ quality.ts      ★ 图片质量闸门 + 闸门→评分结果的映射（纯逻辑）
 │     └─ picker.ts         拾取结果组装、漂移检测（纯逻辑）
 ├─ preload/
 │  ├─ index.ts           contextBridge API（泛型派发器，见 §4.2）
@@ -148,8 +153,15 @@ src/
 
 ### 4.4 纯逻辑与薄绑定分离（必须遵守）
 
-`geometry.ts` / `picker.ts` / `locator.ts` / `ensemble.ts` 是**纯函数**，
-因此能被 vitest 直接覆盖。`cdp.ts` / `browser.ts` 是薄绑定，无法本地验证。
+`geometry.ts` / `picker.ts` / `locator.ts` / `ensemble.ts` / `review.ts` /
+`autoloop.ts` / `auto-orchestrator.ts` / `quality.ts` / `shared/objective.ts`
+是**纯函数**，因此能被 vitest 直接覆盖。
+`cdp.ts` / `browser.ts` / `auto-runner.ts` 是薄绑定，无法本地验证。
+
+隔离约束由两套测试从两个方向把守（缺一不可）：
+`isolation.test.ts` 做**静态源码检查**（不 import fetch / handler 体干净），
+`zero-network.test.ts` 做**运行时证明**（真的执行一遍，全程零网络）。
+只做静态检查证明不了"依赖链上游某处会发网络请求"。
 
 > **新功能一律先把纯逻辑抽出来测，再接薄绑定。**
 > 这不是偏好，是唯一可行的验证手段——本机 Electron 起不来（§5）。
@@ -170,7 +182,7 @@ src/
 
 | 想验证什么 | 可行手段 |
 |---|---|
-| 纯逻辑正确性 | vitest（已覆盖 537 项） |
+| 纯逻辑正确性 | vitest（已覆盖 620 项） |
 | 界面布局与配色 | `pnpm ui:verify`（Edge 无头渲染，见 §5.1） |
 | 窗口/CDP/拾取行为 | **必须上真机**，本地做不到，不要假装能验 |
 
@@ -319,9 +331,14 @@ PowerShell 里转义引号，实测每次都要写错一两轮才跑得起来。
 | **事件是否真的被 `send`** | 声明了、也订阅了，但主进程从不发送——**不会报错的谎言** |
 | `PLANNED_UNSENT` 白名单 | 区分「有意为之的未实现」与「忘了接的实现」 |
 
-两侧都必须干净。已知的两个未发送事件（`evt:progress` / `evt:awaitConfirm`，
-依赖 Phase 5）**必须在 `scripts/check_ipc.py` 的 `PLANNED_UNSENT` 里登记**，
-否则判失败。新加幻影事件时，要么接上发送方，要么显式登记并写明依赖阶段。
+两侧都必须干净。白名单现在是**空的**
+（`PLANNED_UNSENT: dict[str, str] = {}`）：
+`evt:progress` / `evt:awaitConfirm` 在 Phase 5 执行层接通后已真的会被发送，
+继续留在白名单里就等于让"事件是否真的被 send"这条检查对它们**永久豁免**——
+白名单会从"记录历史债务"退化成"掩盖回归"。
+
+将来若确实需要新增未发送事件，`PLANNED_UNSENT` 是唯一登记处，且必须写明
+依赖阶段；否则判失败：要么接上发送方，要么显式登记。
 
 ---
 
@@ -421,9 +438,10 @@ pnpm test           # 同上
 ### 8.2 测试先行（针对纯逻辑）
 
 纯逻辑模块**先写测试再写实现**。理由同 §4.4：这是唯一能在本机验证的手段。
-已覆盖 537 项（13 套件）：`review` 72 / `geometry` 66 / `ai` 60 / `picker` 54 /
+已覆盖 620 项（17 套件）：`review` 72 / `geometry` 66 / `ai` 60 / `picker` 54 /
 `ensemble` 51 / `locator` 45 / `objective` 39 / `autoloop` 37 / `selector` 35 /
-`parse` 34 / `isolation` 19 / `pick-protocol` 16 / `preview-parity` 9。
+`auto-orchestrator` 34 / `parse` 34 / `quality` 24 / `isolation` 19 /
+`pick-protocol` 16 / `quality-yield` 15 / `zero-network` 10 / `preview-parity` 9。
 
 > 计数会随开发变动。改完测试顺手核一次真实数字，别让文档比代码慢半拍
 > —— 文档里的旧数字本身就是一种「界面在说谎」（§6.4）。
@@ -466,12 +484,16 @@ feat(界面): 简洁 + 一点点二次元；修掉四处「界面在说谎」
 | Phase 2 自动化层（纯代码 + 界面） | ✅（CDP/窗口 ⚠ 未在真机验证） |
 | Phase 3 界面壳 | ✅ |
 | Phase 4 单题闭环 | 🟡 代码侧 ✅ / 界面侧 ✅ / 端到端 ⬜（待真机） |
-| Phase 5 连续阅卷 | 🟡 决策层 ✅（`autoloop.ts` 37 项）/ 执行层与 `auto:*` ⬜ |
+| Phase 5 连续阅卷 | 🟡 决策层 ✅（`auto-orchestrator.ts` 34 项）/ 执行层代码 ✅（`auto-runner.ts` + `auto:*` + 质量闸门）/ **真机端到端 ⬜** |
 | Phase 6~7 | ⬜ |
 
 **当前能力定位**（外部审查后确认，不要夸大）：可继续开发的工程底座，
-**不是可用阅卷软件**；连续阅卷、自动填分、自动提交均**未形成完整调用链**，
-**不适合开启自动提交**。
+**不是可用阅卷软件**。
+
+执行层已接通，但"接通"只意味着代码路径完整，**不意味着验证过**：
+`auto-runner.ts` / `cdp.ts` / `browser.ts` 都依赖真实 BrowserWindow，
+本机无法运行（§5）。在任何机器上跑过真实平台之前，
+**不适合开启自动提交**（`top` 模式会真的按下平台的提交按钮）。
 
 **仍需人工推进**（本机无法替代）：真实阅卷平台账号、教师标注资源（E2）、
 能启动 Electron 的机器。
