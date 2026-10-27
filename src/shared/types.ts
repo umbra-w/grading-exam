@@ -559,6 +559,19 @@ export interface PaperReport {
 export type BrowserKernel = 'chrome' | 'edge';
 export type GradingMode = 'top' | 'steady' | 'standard' | 'trial';
 
+
+export interface RecoverySession {
+  timestamp: number;
+  activeTab: string;
+  paperTitle?: string;
+  sheetState?: {
+    currentIndex: number;
+    totalSheets: number;
+    gradedCount: number;
+  };
+  unsavedText?: string;
+}
+
 export interface ExtractedRubric {
   stem: string;
   questionType: QuestionType;
@@ -686,6 +699,12 @@ export interface IPC {
   }) => AICallResult;
   'browser:open': (cfg: { url: string; kernel?: BrowserKernel }) => { ok: boolean; error?: string };
   'browser:close': () => { ok: boolean };
+  /** Phase C1: 悬浮微型条模式切换 */
+  'window:compact': (enable: boolean) => { ok: boolean; isCompact: boolean };
+  /** Phase C3: 崩溃恢复协议（~ 后缀） */
+  'recovery:check': () => { hasCrash: boolean; session?: RecoverySession };
+  'recovery:save': (session: RecoverySession) => { ok: boolean };
+  'recovery:clear': () => { ok: boolean };
   'browser:navigate': (url: string) => { ok: boolean; error?: string };
   'picker:start': (kind: PickKind) => { ok: boolean; error?: string };
   'picker:cancel': () => { ok: boolean };

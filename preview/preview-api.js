@@ -125,7 +125,15 @@ window.gradingExam = {
 
   browserOpen: async () => ({ ok: true }),
   browserNavigate: async () => ({ ok: true }),
+  windowCompact: async (enable) => ({ ok: true, isCompact: Boolean(enable) }),
+  recoveryCheck: async () => ({ hasCrash: false }),
+  recoverySave: async () => ({ ok: true }),
+  recoveryClear: async () => ({ ok: true }),
   browserClose: async () => ({ ok: true }),
+  windowCompact: async (enable) => ({ ok: true, isCompact: Boolean(enable) }),
+  recoveryCheck: async () => ({ hasCrash: false }),
+  recoverySave: async () => ({ ok: true }),
+  recoveryClear: async () => ({ ok: true }),
 
   pickerStart: async () => ({ ok: true }),
   pickerCancel: async () => ({ ok: true }),

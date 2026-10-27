@@ -158,6 +158,14 @@ const api = {
   browserNavigate: (url: string) => invoke('browser:navigate', url),
   browserClose: () => invoke('browser:close'),
 
+  /* ---- 悬浮微型条模式 (Phase C1) ---- */
+  windowCompact: (enable: boolean) => invoke('window:compact', enable),
+
+  /* ---- 崩溃恢复协议 (Phase C3) ---- */
+  recoveryCheck: () => invoke('recovery:check'),
+  recoverySave: (session: Parameters<IPC['recovery:save']>[0]) => invoke('recovery:save', session),
+  recoveryClear: () => invoke('recovery:clear'),
+
   /* ---- 元素拾取 ---- */
   pickerStart: (kind: Parameters<IPC['picker:start']>[0]) => invoke('picker:start', kind),
   pickerCancel: () => invoke('picker:cancel'),

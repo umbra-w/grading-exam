@@ -11,6 +11,8 @@ import { ReviewPanel } from './panels/ReviewPanel';
 import { PaperPanel } from './panels/PaperPanel';
 import { AnalysisPanel } from './panels/AnalysisPanel';
 import { SheetPanel } from './panels/SheetPanel';
+import { MiniOverlay } from './components/MiniOverlay';
+import type { RecoverySession } from '@shared/types';
 
 function CurrentPanel({ page }: { page: PageKey }): JSX.Element {
   switch (page) {
@@ -41,6 +43,8 @@ export function App(): JSX.Element {
   // 启动失败的原因。有值时整个界面让位给一张错误说明 ——
   // 与其给用户一个"能用但其实全坏"的界面，不如直接说清楚哪里坏了。
   const [bootError, setBootError] = useState<string | null>(null);
+  const [isCompact, setIsCompact] = useState(false);
+  const [recoveryPrompt, setRecoveryPrompt] = useState<RecoverySession | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -63,6 +67,11 @@ export function App(): JSX.Element {
 
         disposers.push(window.gradingExam.onLog(appendLog));
         disposers.push(window.gradingExam.onUsage(setUsage));
+
+        const rec = await window.gradingExam.recoveryCheck();
+        if (rec.hasCrash && rec.session) {
+          setRecoveryPrompt(rec.session);
+        }
       } catch (e) {
         if (!alive) return;
         const err = e as Error;
@@ -107,6 +116,23 @@ export function App(): JSX.Element {
   // ★ 启动失败时，整屏显示原因，而不是留一个空白界面。
   //   空白界面最坏的地方在于：它看起来像"设计很简洁"，用户会以为自己点错了什么，
   //   于是去排查一个根本不存在的问题（AGENTS §6.4）。
+  if (isCompact) {
+    return (
+      <MiniOverlay
+        onRestore={() => {
+          void window.gradingExam.windowCompact(false);
+          setIsCompact(false);
+        }}
+        onNextPaper={() => {
+          appendLog({ ts: Date.now(), level: 'info', message: '已请求切换至下一份答卷' });
+        }}
+        onFillScore={(score) => {
+          appendLog({ ts: Date.now(), level: 'ok', message: `悬浮模式：已填入分值 ${score}` });
+        }}
+      />
+    );
+  }
+
   if (bootError) {
     return (
       <div className="app">
@@ -143,6 +169,51 @@ export function App(): JSX.Element {
       <div className="app-body">
         <Sidebar />
         <div className="content">
+          {recoveryPrompt && (
+            <div
+              style={{
+                background: 'var(--warn-soft)',
+                border: '1px solid var(--warn)',
+                borderRadius: 'var(--r-md)',
+                padding: '8px 14px',
+                marginBottom: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ color: 'var(--warn-text)', fontSize: 13 }}>
+                ⚠️ <strong>发现未保存的异常退出进度</strong>：
+                {recoveryPrompt.paperTitle ?? '答卷批改'}（
+                {new Date(recoveryPrompt.timestamp).toLocaleTimeString()}）
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: '2px 8px', fontSize: 12 }}
+                  onClick={() => {
+                    if (recoveryPrompt.activeTab) {
+                      setPage(recoveryPrompt.activeTab as PageKey);
+                    }
+                    void window.gradingExam.recoveryClear();
+                    setRecoveryPrompt(null);
+                  }}
+                >
+                  恢复会话
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: '2px 8px', fontSize: 12 }}
+                  onClick={() => {
+                    void window.gradingExam.recoveryClear();
+                    setRecoveryPrompt(null);
+                  }}
+                >
+                  忽略并清除
+                </button>
+              </div>
+            </div>
+          )}
           <CurrentPanel page={page} />
         </div>
       </div>

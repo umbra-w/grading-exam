@@ -206,7 +206,7 @@ src/
 
 | 想验证什么 | 可行手段 |
 |---|---|
-| 纯逻辑正确性 | vitest（已覆盖 853 项） |
+| 纯逻辑正确性 | vitest（已覆盖 861 项） |
 | 界面布局与配色 | `pnpm ui:verify`（Edge 无头渲染，见 §5.1） |
 | 窗口/CDP/拾取行为 | **必须上真机**，本地做不到，不要假装能验 |
 
@@ -505,7 +505,7 @@ pnpm test           # 同上
 ### 8.2 测试先行（针对纯逻辑）
 
 纯逻辑模块**先写测试再写实现**。理由同 §4.4：这是唯一能在本机验证的手段。
-已覆盖 853 项（30 套件）：`review` 72 / `geometry` 66 / `ai` 60 / `picker` 54 /
+已覆盖 861 项（32 套件）：`review` 72 / `geometry` 66 / `ai` 60 / `picker` 54 /
 `ensemble` 51 / `locator` 45 / `objective` 39 / `paper` 39 / `answer-import` 39 /
 `autoloop` 37 /
 `selector` 35 / `auto-orchestrator` 34 / `parse` 34 / `paper-entry` 33 /

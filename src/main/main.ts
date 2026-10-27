@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type {
   AICallResult,
+  RecoverySession,
   AIConfig,
   AppSettings,
   AutoGradeConfig,
@@ -45,6 +46,12 @@ import {
   testConnection,
   visionAnswers,
 } from './ai/client';
+import {
+  checkCrashRecovery,
+  saveRecoveryAutosave,
+  finalizeRecoveryAutosave,
+  clearRecovery,
+} from './io/recovery';
 import { PlatformBrowser } from './page/browser';
   import { AutoRunner } from './page/auto-runner';
 import { parseFile, toIpcResult } from './io/parse';
@@ -774,6 +781,43 @@ function registerBrowserHandlers(): void {
     return platform.close();
   });
 
+  /* ---- 悬浮微型条模式（Phase C1）---- */
+  ipcMain.handle('window:compact', (_e, enable: boolean) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (enable) {
+          mainWindow.setSize(440, 84);
+          mainWindow.setAlwaysOnTop(true, 'floating');
+        } else {
+          mainWindow.setSize(1280, 800);
+          mainWindow.setAlwaysOnTop(false);
+          mainWindow.center();
+        }
+      }
+      return { ok: true, isCompact: Boolean(enable) };
+    } catch {
+      return { ok: false, isCompact: false };
+    }
+  });
+
+  /* ---- 崩溃自动恢复协议（Phase C3）---- */
+  ipcMain.handle('recovery:check', async () => {
+    const dataDir = dirname(getStorePath());
+    return checkCrashRecovery(dataDir);
+  });
+
+  ipcMain.handle('recovery:save', async (_e, session: RecoverySession) => {
+    const dataDir = dirname(getStorePath());
+    const ok = await saveRecoveryAutosave(dataDir, session);
+    return { ok };
+  });
+
+  ipcMain.handle('recovery:clear', async () => {
+    const dataDir = dirname(getStorePath());
+    const ok = await clearRecovery(dataDir);
+    return { ok };
+  });
+
   ipcMain.handle('browser:navigate', async (_e, url: string) => {
     if (!url?.trim()) return { ok: false, error: '网址为空' };
     return platform.navigate(url);
@@ -1107,4 +1151,8 @@ app.on('window-all-closed', () => {
     logStartup('非 macOS → app.quit()');
     app.quit();
   }
+});
+app.on('before-quit', () => {
+  const dataDir = dirname(getStorePath());
+  void finalizeRecoveryAutosave(dataDir);
 });

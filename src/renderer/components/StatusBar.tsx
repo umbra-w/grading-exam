@@ -90,6 +90,17 @@ export function StatusBar(): JSX.Element {
           </span>
         ) : null}
       </span>
+
+      <button
+        className="btn btn-secondary"
+        style={{ padding: '1px 6px', fontSize: 11, marginLeft: 8 }}
+        onClick={() => {
+          void window.gradingExam.windowCompact(true);
+        }}
+        title="缩小为屏幕边缘悬浮条模式，不遮挡浏览器阅卷网页"
+      >
+        ⛶ 悬浮条
+      </button>
     </div>
   );
 }
