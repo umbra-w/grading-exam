@@ -1,0 +1,13 @@
+# pnpm 供应链策略
+#
+# allowBuilds：只对确需在安装期执行脚本的依赖开白名单。
+#   electron-winstaller 是 electron-builder 打包 Windows 目标时的依赖，需要其安装脚本。
+#   其余依赖保持默认拒绝，缩小供应链攻击面。
+#
+# minimumReleaseAgeExclude：pnpm 默认拒绝安装发布时间过短的版本。
+#   此处仅对已确认来源可信的包豁免。
+allowBuilds:
+  electron-winstaller: true
+
+minimumReleaseAgeExclude:
+  - zustand@5.0.16

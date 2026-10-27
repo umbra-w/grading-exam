@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>夹具 2b · iframe 子页（分数框在这里）</title>
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 10px; background: #fff; color: #1f2329; }
+  .box { border: 2px solid #f59e0b; border-radius: 6px; padding: 10px; }
+  .tag { font-size: 11px; color: #b45309; font-weight: 700; letter-spacing: .5px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  input { font-size: 15px; padding: 6px 9px; border: 1px solid #d1d5db; border-radius: 6px; width: 100px; }
+  button { font-size: 14px; padding: 6px 14px; border-radius: 6px; border: 1px solid #2563eb; background: #2563eb; color: #fff; cursor: pointer; }
+  .status { margin-top: 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; color: #6b7280; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <div class="tag">IFRAME 内 · framePath 应对应到本 frame</div>
+
+  <!--
+    跨域拾取的关键：这个 input 位于 iframe 内部。
+    主进程必须在 frameTree 里找到本 frame，把它的偏移逐级累加，
+    才能算出顶层视口坐标供 Input.dispatchMouseEvent 使用。
+
+    若只拾取到 iframe 元素本身（#score-frame），说明没穿透进来看内部。
+  -->
+  <div class="row">
+    <label for="frame-score-input">评分：</label>
+    <input id="frame-score-input" type="number" step="0.5" min="0" max="6"
+           data-controlled="true" aria-label="iframe 内分数输入框" placeholder="0-6" />
+    <button id="frame-submit-btn" data-testid="frame-submit">iframe 内提交</button>
+  </div>
+
+  <div id="frame-status" class="status">iframe 内等待操作…</div>
+</div>
+
+<script>
+(function () {
+  var input = document.getElementById('frame-score-input');
+  var statusEl = document.getElementById('frame-status');
+  var state = null, submitted = null;
+
+  input.addEventListener('input', function (e) {
+    // isTrusted 判别：CDP 的 Input.insertText 为 true，脚本 dispatchEvent 为 false
+    state = input.value;
+    statusEl.textContent = 'iframe 内 input isTrusted=' + e.isTrusted + ' → ' + input.value;
+    statusEl.style.color = e.isTrusted ? '#16a34a' : '#d97706';
+  });
+
+  document.getElementById('frame-submit-btn').addEventListener('click', function (e) {
+    submitted = state;
+    statusEl.textContent = 'iframe 内已提交，平台读到 = ' +
+      (submitted === null ? '空 → 平台不认' : submitted) + ' [isTrusted=' + e.isTrusted + ']';
+    statusEl.style.color = submitted === null ? '#dc2626' : '#16a34a';
+    window.__frameSubmit = { at: Date.now(), score: submitted };
+  });
+
+  window.readFrameScoreValue = function () { return input.value === '' ? null : Number(input.value); };
+  window.readFrameComponentState = function () { return state; };
+  window.readFrameSubmitted = function () { return submitted; };
+  window.__fixture = { kind: 'iframe-child', controlled: true, origin: location.origin };
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grading_exam · 界面预览</title>
+    <style>
+      /* 预览页专用：模拟 Electron 的无边框窗口尺寸 */
+      html, body, #root { height: 100%; margin: 0; }
+      body { overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- 顺序很重要：假桥必须先于 React 入口执行，否则 App 首次 effect 会撞到 undefined -->
+    <script type="module" src="./preview-api.js"></script>
+    <script type="module" src="../src/renderer/main.tsx"></script>
+  </body>
+</html>

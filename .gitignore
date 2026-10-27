@@ -1,0 +1,25 @@
+node_modules/
+out/
+release/
+dist/
+*.log
+.DS_Store
+.env
+.env.local
+
+# 评测轨产物：答卷原始图片与标注数据含个人信息，禁止入库（PLAN v2.0 §3 E2 脱敏要求）
+data/raw/
+data/derived/
+*.local.json
+
+# 界面预览的生成物。preview/ 下的源码（假桥、检查脚本）要入库——
+# 它们是"改了 CSS 能验证"的凭据，丢了就只能靠肉眼。
+# dist/ 已被上面覆盖；截图与 DOM dump 是产物，每次重跑都会重新生成。
+preview/shot-*.png
+preview/dom-*.html
+
+# Python 隐式产物。AGENTS.md（workspace 级）明确把这类隐式写入也算作写文件：
+# 裸跑 `python -c "import metrics"` 就会在源码旁生成 __pycache__。
+# 所有 Python 调用都应带 PYTHONDONTWRITEBYTECODE=1；这条是第二道防线。
+__pycache__/
+*.pyc

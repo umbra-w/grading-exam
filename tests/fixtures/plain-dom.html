@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>夹具 1 · 普通 DOM（受控组件）</title>
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; background: #f6f7f9; color: #1f2329; }
+  .paper { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 16px; max-width: 720px; }
+  .qimg { width: 100%; height: 150px; background: repeating-linear-gradient(45deg,#eef2ff,#eef2ff 10px,#e0e7ff 10px,#e0e7ff 20px);
+          border: 1px dashed #a5b4fc; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+          color: #4338ca; font-size: 14px; }
+  .hint { color: #6b7280; font-size: 12px; margin: 6px 0 14px; }
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  input[type=number] { font-size: 15px; padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 6px; width: 110px; }
+  button { font-size: 14px; padding: 7px 16px; border-radius: 6px; border: 1px solid #2563eb; background: #2563eb; color: #fff; cursor: pointer; }
+  .status { margin-top: 12px; font-size: 13px; font-family: ui-monospace, Consolas, monospace; }
+  .ok { color: #16a34a; } .warn { color: #d97706; } .err { color: #dc2626; }
+  table { border-collapse: collapse; margin-top: 14px; font-size: 12.5px; width: 100%; }
+  th, td { border: 1px solid #e3e6ea; padding: 5px 8px; text-align: left; }
+  th { background: #f9fafb; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="paper">
+  <h2 style="margin:0 0 4px">第 17 题（满分 6 分）</h2>
+  <p class="hint">夹具页 1 · 普通 DOM + 受控组件</p>
+
+  <!-- 题目区域：拾取目标 #1（元素拾取 questionRegion） -->
+  <div id="question-region">
+    <div class="qimg">【题目图片占位】此处为题目区域，截图时以该矩形为界</div>
+    <p style="line-height:1.7">
+      已知某物体做匀加速直线运动，初速度为 2 m/s，加速度为 1.5 m/s²。
+      求 4 秒末的速度与这 4 秒内的位移。
+    </p>
+  </div>
+
+  <div class="row">
+    <label for="score-input">评分：</label>
+
+    <!--
+      拾取目标 #2（元素拾取 scoreInput）。
+
+      注意：这个 input 额外挂了 data-controlled="true"，并注册了 input/change 监听，
+      模拟 React/Vue 受控组件的行为——外部若用 el.value = x 直接赋值，
+      DOM 值会变但不会触发框架状态更新（真实平台正是这样不认账的）。
+    -->
+    <input id="score-input" type="number" step="0.5" min="0" max="6"
+           data-controlled="true" placeholder="0-6" aria-label="分数输入框" />
+
+    <span style="color:#6b7280">/ 6</span>
+
+    <!-- 拾取目标 #3（元素拾取 submitButton） -->
+    <button id="submit-btn" data-testid="submit">提交</button>
+  </div>
+
+  <div id="status" class="status">等待操作…</div>
+</div>
+
+<div class="paper" style="margin-top:14px">
+  <h3 style="margin:0 0 8px">诊断读数（自动化脚本用它判断是否真的写入成功）</h3>
+  <table>
+    <tr><th>读取方式</th><th>值</th><th>含义</th></tr>
+    <tr><td><code>readScoreValue()</code></td><td id="dom-value">—</td><td>DOM 的 <code>el.value</code></td></tr>
+    <tr><td><code>readComponentState()</code></td><td id="state-value">—</td><td>模拟框架内部状态</td></tr>
+    <tr><td><code>submittedValue</code></td><td id="submitted">—</td><td>提交时实际读到的值</td></tr>
+  </table>
+  <p class="hint" style="margin-top:10px">
+    判据：用 <code>Input.insertText</code> 写入后，<b>DOM 值</b>与<b>组件状态</b>必须同时更新。
+    若只有 DOM 值变了，说明自动化走了 <code>el.value = x</code> 这类不可信路径，真实平台会不认。
+  </p>
+</div>
+
+<!-- 诊断接口：主进程/测试脚本通过 evaluate 调用 -->
+<script>
+(function () {
+  // 模拟受控组件：真实框架状态存这里，只有受信任的输入事件才会更新它
+  var componentState = null;
+  var submittedValue = null;
+
+  var input = document.getElementById('score-input');
+  var statusEl = document.getElementById('status');
+
+  function render() {
+    document.getElementById('dom-value').textContent = input.value === '' ? '(空)' : input.value;
+    document.getElementById('state-value').textContent = componentState === null ? '(空)' : String(componentState);
+    document.getElementById('submitted').textContent = submittedValue === null ? '(未提交)' : String(submittedValue);
+  }
+
+  // 只有真实用户输入（或 CDP Input.insertText 这类受信任事件）才会触发 input 事件
+  input.addEventListener('input', function (e) {
+    // e.isTrusted 在真实用户输入与 CDP insertText 下均为 true；
+    // 脚本 dispatchEvent 造出来的事件 isTrusted === false。
+    componentState = input.value;
+    statusEl.textContent = '输入事件 isTrusted=' + e.isTrusted + ' → 值=' + input.value;
+    statusEl.className = 'status ' + (e.isTrusted ? 'ok' : 'warn');
+    render();
+  });
+
+  input.addEventListener('change', function () { render(); });
+
+  document.getElementById('submit-btn').addEventListener('click', function (e) {
+    // 平台在提交时读的是**组件状态**，不是 DOM 值——这正是受控组件的关键定义
+    submittedValue = componentState;
+    statusEl.textContent = '已提交。平台读到的分（来自组件状态）= ' +
+      (submittedValue === null ? '空 → 平台会认为你没给分' : submittedValue) +
+      ' [isTrusted=' + e.isTrusted + ']';
+    statusEl.className = 'status ' + (submittedValue === null ? 'err' : 'ok');
+    render();
+    window.__lastSubmit = { at: Date.now(), score: submittedValue };
+  });
+
+  // 自动化可调用的诊断接口
+  window.readScoreValue = function () { return input.value === '' ? null : Number(input.value); };
+  window.readComponentState = function () { return componentState; };
+  window.readSubmittedValue = function () { return submittedValue; };
+  window.__fixture = { kind: 'plain-dom', controlled: true };
+
+  render();
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,763 @@
+/* ============================================================================
+   Grading_exam · 视觉体系 v2
+   ----------------------------------------------------------------------------
+   风格取向：简洁为主，一点点二次元（不要多）。
+   落点刻意收在「工具感」这一侧——这是老师要用来批量批卷的生产力工具，
+   不是消遣应用。二次元的味道只从三处渗透，不铺满：
+
+     1. 主色偏移：不用纯商务蓝，改用带紫的靛蓝 + 樱花粉点缀
+     2. 造型语汇：大圆角、柔和弥散投影、按钮轻微「弹一下」
+     3. 微观装饰：导航选中态的柔和渐变条、标题下的渐隐下划线、
+        卡片角的极小装饰点
+
+   刻意没做的（避免变成"太二次元"）：
+     · 不做萌系吉祥物、不做对话框气泡
+     · 不用亮粉/亮青撞色，不加大面积渐变背景
+     · 不加音效、不加拟人化文案
+     · 边框与分隔线仍然保留——信息密度高的工具去掉分隔会难读
+
+   色彩以 CSS 变量统一管理，便于日后整体换肤。
+   ============================================================================ */
+
+:root {
+  /* ---- 底色：偏冷白，比纯白柔和，长时间看不累 ---- */
+  --bg: #f6f7fb;
+  --bg-deep: #eef0f7;
+  --panel: #ffffff;
+  --panel-soft: #fafbff;
+
+  /* ---- 主色：靛蓝偏紫（比 #2563eb 多一点"动漫感"，但仍属商务可接受范围） ---- */
+  --accent: #6366f1;
+  --accent-deep: #4f46e5;
+  --accent-soft: #eef0ff;
+  --accent-line: #c7cbfa;
+
+  /* ---- 次色：樱花粉。**只用于点缀**，不用于大面积背景 ---- */
+  --sakura: #f472b6;
+  --sakura-deep: #ec4899;
+  --sakura-soft: #fdf2f8;
+
+  /* ---- 语义色 ----
+     每个色都有「亮」与「深」两支，用途严格区分：
+       --ok/--warn/--err      用于边框、图标、进度等**非文字**元素
+       --ok-text/...          用于**文字**，因为亮色文字放在同色淡底上
+                              对比度不足（实测成功 2.4:1 / 警告 2.1:1，
+                              正好卡在"能看见但费劲"的灰色地带）。
+     这一层拆分是 verify_ui.py 算出来的，不是凭感觉定的。 */
+  --ok: #047857;
+  --ok-text: #065f46;
+  --ok-soft: #ecfdf5;
+  --warn: #b45309;
+  --warn-text: #92400e;
+  --warn-soft: #fef3c7;
+  --err: #ef4444;
+  --err-text: #991b1b;
+  --err-soft: #fef2f2;
+  /* 粉色只有文字用途，直接给可读的深色，不留亮色变体以免误用 */
+  --sakura-text: #9d174d;
+
+  /* ---- 文本 ---- */
+  --text: #1e2130;
+  --text-mid: #4b5169;
+  --text-dim: #8b91a8;
+
+  /* ---- 描边：比 v1 更淡更冷，减少"表格感" ---- */
+  --border: #e6e8f2;
+  --border-strong: #d5d9e8;
+
+  /* ---- 圆角：整体放大。这是"可爱但不幼稚"的主要来源 ---- */
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 14px;
+  --r-full: 999px;
+
+  /* ---- 投影：短距 + 大扩散 + 低透明度 = 弥散感，避免生硬的灰块 ---- */
+  --sh-1: 0 1px 2px rgba(30, 33, 48, 0.04);
+  --sh-2: 0 2px 8px rgba(30, 33, 48, 0.06), 0 1px 2px rgba(30, 33, 48, 0.04);
+  --sh-3: 0 8px 24px rgba(79, 70, 229, 0.10), 0 2px 6px rgba(30, 33, 48, 0.05);
+  --sh-accent: 0 4px 14px rgba(99, 102, 241, 0.28);
+
+  --mono: ui-monospace, SFMono-Regular, Consolas, 'Cascadia Mono', monospace;
+
+  /* 缓动：轻微回弹，用于按钮与卡片。这是"弹一下"的手感来源 */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei',
+    'PingFang SC', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 滚动条也统一成浅色细条，避免默认深色条破坏整体调性 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #d8dcec;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-full);
+}
+::-webkit-scrollbar-thumb:hover { background: #c2c8e0; background-clip: content-box; }
+
+/* 尊重系统的减少动效设置 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------------------------------------------------------------- 布局 */
+
+.app {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  height: 100%;
+}
+
+.app-body {
+  display: grid;
+  grid-template-columns: 186px 1fr;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- 侧栏 */
+
+.sidebar {
+  /* 极淡的竖向渐变：从上方的靛蓝余韵过渡到中性底，制造轻微层次 */
+  background: linear-gradient(180deg, #f0f2ff 0%, #fbfbfe 42%, #fbfbfe 100%);
+  border-right: 1px solid var(--border);
+  padding: 14px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 侧栏右下角的装饰性光晕 —— 二次元味道的主要来源，但极淡（6% 透明度）。
+   用 radial-gradient 而非图片，零资源开销且随主题变量变化。 */
+.sidebar::after {
+  content: '';
+  position: absolute;
+  right: -46px;
+  bottom: -46px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.16) 0%, rgba(244, 114, 182, 0) 68%);
+  pointer-events: none;
+}
+
+.sidebar .brand {
+  padding: 2px 10px 16px;
+  letter-spacing: 0.2px;
+  position: relative;
+  z-index: 1;
+}
+
+.sidebar .brand .name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--text);
+}
+
+/* 品牌标记：一个柔和渐变的小方块，代替徽标图片 */
+.sidebar .brand .mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--sakura) 100%);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+  flex: 0 0 auto;
+  position: relative;
+}
+/* 方块里挖一个白点，像"眼睛"的反光——很小的一笔，不喧宾夺主 */
+.sidebar .brand .mark::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.sidebar .brand small {
+  display: block;
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 11px;
+  margin: 5px 0 0 27px;
+}
+
+.sidebar .nav-group {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.6px;
+  padding: 10px 11px 4px;
+  text-transform: uppercase;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  color: var(--text-mid);
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  font-family: inherit;
+  width: 100%;
+  position: relative;
+  transition: background 0.16s var(--ease), color 0.16s var(--ease),
+    transform 0.16s var(--ease-bounce);
+  z-index: 1;
+}
+
+.nav-item .icon {
+  width: 16px;
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.85;
+  flex: 0 0 auto;
+}
+
+.nav-item:hover { background: rgba(99, 102, 241, 0.07); transform: translateX(2px); }
+
+/* 选中态：淡靛蓝底 + 左侧渐变竖条（竖条是二次元 UI 的常见语汇，克制且有效） */
+.nav-item.active {
+  background: linear-gradient(90deg, var(--accent-soft) 0%, rgba(253, 242, 248, 0.5) 100%);
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 17px;
+  border-radius: var(--r-full);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--sakura) 100%);
+}
+
+.nav-item .tag {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  background: var(--err-soft);
+  color: var(--err);
+  font-weight: 600;
+}
+/* 已完成的项目用绿色，避免整列都是红"未实现"显得刺眼 */
+.nav-item .tag.done { background: var(--ok-soft); color: var(--ok); }
+
+/* ---------------------------------------------------------------- 内容区 */
+
+.content {
+  overflow: auto;
+  padding: 18px 22px 24px;
+  min-height: 0;
+  scroll-behavior: smooth;
+}
+
+/* 卡片：白底 + 淡描边 + 弥散投影。悬停时投影略增强，产生"浮起"的轻微反馈 */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--sh-1);
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+  position: relative;
+}
+.card:hover { box-shadow: var(--sh-2); }
+
+/* 卡片右上角的装饰点：极小，只有 hover 时才明显。纯氛围，不承载信息 */
+.card::before {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sakura);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease);
+}
+.card:hover::before { opacity: 0.5; }
+
+.card > h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.1px;
+  display: inline-block;
+  position: relative;
+  padding-bottom: 3px;
+}
+/* 标题下的渐隐下划线：从靛蓝渐隐到透明，比整条实线轻盈 */
+.card > h2::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(244, 114, 182, 0.45) 55%, rgba(244, 114, 182, 0) 100%);
+  opacity: 0.75;
+}
+
+.card > .hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 2px 0 13px;
+  line-height: 1.65;
+}
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; }
+
+/* ---------------------------------------------------------------- 表单 */
+
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
+.field label {
+  font-size: 12px;
+  color: var(--text-mid);
+  font-weight: 550;
+  letter-spacing: 0.05px;
+}
+.field .sub { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+
+input[type='text'], input[type='password'], input[type='number'], select, textarea {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--text);
+  width: 100%;
+  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease),
+    background 0.16s var(--ease);
+}
+input::placeholder, textarea::placeholder { color: #b8bdd0; }
+
+input:hover:not(:focus), select:hover:not(:focus), textarea:hover:not(:focus) {
+  border-color: #c3c8de;
+}
+
+/* 聚焦光圈用主色的柔光，比 v1 的硬蓝框更"柔" */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.13);
+  background: var(--panel-soft);
+}
+
+textarea { resize: vertical; min-height: 70px; line-height: 1.62; }
+
+select {
+  appearance: none;
+  /* 自绘下拉箭头：默认箭头在深色下不可控，且样式老旧 */
+  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%238b91a8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+
+/* ---------------------------------------------------------------- 按钮 */
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease),
+    color 0.15s var(--ease), box-shadow 0.15s var(--ease),
+    transform 0.12s var(--ease-bounce);
+}
+
+button:hover:not(:disabled) {
+  background: var(--panel-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-deep);
+  transform: translateY(-1px);
+  box-shadow: var(--sh-1);
+}
+/* 按下时"压回去"——这是按钮手感的关键一笔 */
+button:active:not(:disabled) { transform: translateY(0) scale(0.985); box-shadow: none; }
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+button.primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--sh-accent);
+}
+button.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7376f5 0%, var(--accent) 100%);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.36);
+}
+
+button.danger { border-color: #f7c9c9; color: var(--err); }
+button.danger:hover:not(:disabled) { background: var(--err-soft); border-color: #f1a8a8; color: var(--err); }
+
+button.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  padding: 5px 8px;
+}
+button.ghost:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-deep); }
+
+/* 拾取成功态（SPEC F1.2 / F1.9）：绿底 + 呼吸感边框 */
+button.picked {
+  background: var(--ok-soft);
+  border-color: var(--ok);
+  color: var(--ok-text);
+  font-weight: 600;
+}
+button.picked:hover:not(:disabled) { background: #dcfce7; border-color: var(--ok); color: var(--ok-text); }
+
+/* 正在等待拾取的项目：柔和脉冲，提示"现在去页面点一下" */
+button.picking {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  animation: pulse-soft 1.5s var(--ease) infinite;
+}
+@keyframes pulse-soft {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0); }
+}
+
+.row { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+.row.end { justify-content: flex-end; }
+.spacer { flex: 1; }
+
+/* -------------------------------------------------------------- 日志条 */
+
+.logbar {
+  border-top: 1px solid var(--border);
+  /* 用偏蓝的深色而非纯黑，与整体冷色调统一 */
+  background: #16171e;
+  color: #c9cddd;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  height: 190px;
+  display: flex;
+  flex-direction: column;
+}
+.logbar.collapsed { height: 33px; }
+
+.logbar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #242633;
+  background: #111219;
+  flex: 0 0 auto;
+}
+.logbar-head .title {
+  color: #e4e6f0;
+  font-weight: 600;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* 标题前的小圆点，按日志级别变色（见 StatusBar/LogBar 逻辑） */
+.logbar-head .title::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.7);
+}
+.logbar-head button {
+  background: transparent;
+  border: 1px solid #333646;
+  color: #9ba2b8;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: var(--r-full);
+}
+.logbar-head button:hover:not(:disabled) {
+  background: #232533;
+  border-color: #464a5e;
+  color: #d8dbe8;
+  transform: none;
+  box-shadow: none;
+}
+
+.logbar-body { overflow: auto; padding: 7px 12px; flex: 1 1 auto; min-height: 0; }
+.logline { white-space: pre-wrap; word-break: break-all; }
+.logline .t { color: #6b7186; }
+.logline.info  { color: #c9cddd; }
+.logline.ok    { color: #6ee7b7; }
+.logline.warn  { color: #fcd34d; }
+.logline.error { color: #fca5a5; }
+.logbar-body .empty { color: #4d5265; font-style: italic; }
+
+/* -------------------------------------------------------------- 状态栏 */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.statusbar .kv { display: flex; gap: 5px; align-items: center; }
+.statusbar .kv b { color: var(--text); font-weight: 600; font-family: var(--mono); }
+.statusbar .ok { color: var(--ok); }
+.statusbar .warn { color: var(--warn); }
+
+/* ---------------------------------------------------------------- 徽标 */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  background: #f0f2f8;
+  color: var(--text-mid);
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.badge.green { background: var(--ok-soft); color: var(--ok-text); }
+.badge.amber { background: var(--warn-soft); color: var(--warn-text); }
+.badge.gray  { background: #f0f2f8; color: #9aa0b4; }
+.badge.pink  { background: var(--sakura-soft); color: var(--sakura-text); }
+.badge.blue  { background: var(--accent-soft); color: var(--accent-deep); }
+
+/* ---------------------------------------------------------------- 提示条 */
+
+/* 提示条用左侧渐变竖条代替整块底色，视觉更轻 */
+.notice {
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(180deg, var(--warn) 0%, rgba(245, 158, 11, 0.35) 100%) 1;
+  background: var(--warn-soft);
+  padding: 10px 14px;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  font-size: 12px;
+  color: var(--warn-text);
+  margin-bottom: 13px;
+  line-height: 1.7;
+}
+.notice.info {
+  border-image: linear-gradient(180deg, var(--accent) 0%, rgba(99, 102, 241, 0.35) 100%) 1;
+  background: var(--accent-soft);
+  color: #3730a3;
+}
+.notice.ok {
+  border-image: linear-gradient(180deg, var(--ok) 0%, rgba(16, 185, 129, 0.35) 100%) 1;
+  background: var(--ok-soft);
+  color: var(--ok-text);
+}
+
+/* ------------------------------------------------------ 空态与占位面板 */
+
+/* 未实现的面板：给一个明确的"待建"视觉，而不是空白页让人困惑 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 52px 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.empty-state .glyph {
+  width: 54px;
+  height: 54px;
+  border-radius: var(--r-lg);
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--sakura-soft) 100%);
+  border: 1px solid var(--border);
+  box-shadow: var(--sh-1);
+}
+.empty-state .title { font-size: 14px; font-weight: 600; color: var(--text-mid); }
+.empty-state .desc { font-size: 12px; line-height: 1.75; max-width: 430px; }
+
+/* -------------------------------------------------- 拾取状态小部件 */
+
+.pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.pick-slot {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  background: var(--panel-soft);
+  transition: border-color 0.18s var(--ease), background 0.18s var(--ease);
+}
+.pick-slot.filled { border-color: var(--ok); background: var(--ok-soft); }
+.pick-slot.pending { border-color: var(--accent); background: var(--accent-soft); }
+
+.pick-slot .name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-mid);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.pick-slot .detail {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  line-height: 1.65;
+  word-break: break-all;
+}
+.pick-slot.filled .detail { color: var(--ok-text); }
+
+/* ------------------------------------------------------- 模式选择卡 */
+
+/* 三种批阅模式用卡片式单选，比下拉更直观（要选的东西简单且语义重要） */
+.mode-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+.mode-card {
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 11px 13px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s var(--ease), background 0.18s var(--ease),
+    box-shadow 0.18s var(--ease), transform 0.12s var(--ease-bounce);
+}
+.mode-card:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  transform: translateY(-1px);
+  box-shadow: var(--sh-2);
+}
+.mode-card.active {
+  border-color: var(--accent);
+  background: linear-gradient(160deg, var(--accent-soft) 0%, rgba(253, 242, 248, 0.55) 100%);
+  box-shadow: var(--sh-3);
+}
+.mode-card .mc-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.mode-card.active .mc-name { color: var(--accent-deep); }
+.mode-card .mc-desc { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+
+/* 危险模式的警示角标 */
+.mode-card .mc-warn {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-weight: 600;
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------ 进度条 */
+
+.progress {
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--bg-deep);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.progress > i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--sakura) 100%);
+  transition: width 0.35s var(--ease);
+}
+
+/* ------------------------------------------------------------ 表格 */
+
+table.data {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+table.data th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-mid);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-soft);
+  font-size: 11.5px;
+}
+table.data th:first-child { border-radius: var(--r-sm) 0 0 0; }
+table.data th:last-child { border-radius: 0 var(--r-sm) 0 0; }
+table.data td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+table.data tr:last-child td { border-bottom: none; }
+table.data tbody tr:hover td { background: var(--panel-soft); }
+
+/* -------------------------------------------------- 数字用等宽对齐 */
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dim { color: var(--text-dim); }
+.mono { font-family: var(--mono); }

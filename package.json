@@ -1,0 +1,82 @@
+{
+  "name": "grading-exam",
+  "version": "0.1.0",
+  "description": "Grading_exam · AI 阅卷助手（开源复刻版）— 本地运行、无后端、MIT",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "electron --no-sandbox scripts/smoke-main.cjs",
+    "dist": "npm run build && electron-builder --win --x64",
+    "fixtures": "python -m http.server 8000 --bind 127.0.0.1 --directory tests/fixtures",
+    "validate:dataset": "python scripts/validate_dataset.py ../Grading_exam_research/标注模板_测试集.csv",
+    "migrate:dataset": "python scripts/migrate_dataset.py --dry-run",
+    "metrics:selftest": "python scripts/eval/metrics.py selftest",
+    "eval:selftest": "python scripts/eval/run_eval.py --selftest",
+    "freeze:contract": "python scripts/freeze.py --contract",
+    "freeze:show": "python scripts/freeze.py --show",
+    "freeze:verify": "python scripts/freeze.py --verify",
+    "ui:preview": "vite build --config preview/vite.config.mjs",
+    "ui:serve": "python -m http.server 8765 --bind 127.0.0.1 --directory preview/dist",
+    "ui:verify": "python preview/verify_ui.py --render"
+  },
+  "dependencies": {
+    "electron-store": "^12.0.0",
+    "electron-updater": "^6.8.9",
+    "exceljs": "^4.4.0",
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^2.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "jsdom": "^30.1.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "zustand": "^5.0.16"
+  },
+  "build": {
+    "appId": "io.github.grading-exam.app",
+    "productName": "Grading_exam",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  }
+}

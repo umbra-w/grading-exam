@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>夹具 2a · iframe 父页</title>
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; background: #f6f7f9; color: #1f2329; }
+  .paper { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 16px; max-width: 760px; }
+  .hint { color: #6b7280; font-size: 12px; line-height: 1.7; }
+  .qimg { height: 120px; background: repeating-linear-gradient(45deg,#eef2ff,#eef2ff 10px,#e0e7ff 10px,#e0e7ff 20px);
+          border: 1px dashed #a5b4fc; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+          color: #4338ca; font-size: 14px; margin-bottom: 12px; }
+  iframe { width: 100%; height: 190px; border: 0; border-radius: 6px; }
+  .diag { margin-top: 14px; font-size: 12.5px; font-family: ui-monospace, Consolas, monospace; color: #374151; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+  th, td { border: 1px solid #e3e6ea; padding: 5px 8px; text-align: left; }
+  th { background: #f9fafb; }
+</style>
+</head>
+<body>
+
+<div class="paper">
+  <h2 style="margin:0 0 4px">第 18 题（满分 6 分）</h2>
+  <p class="hint">夹具页 2a · 父页。分数框在下方 iframe 内。</p>
+
+  <!-- 拾取目标：题目区域（父页） -->
+  <div id="question-region">
+    <div class="qimg">【题目图片占位】父页题目区域</div>
+    <p style="line-height:1.7">某溶液的物质的量浓度为 0.5 mol/L，体积为 200 mL。求其中溶质的物质的量。</p>
+  </div>
+
+  <!--
+    ★ 跨域要点（本文件的核心）：
+    想把亲子页做成**真正跨域**，必须让两者 origin 不同。
+    浏览器把 localhost 与 127.0.0.1 视为不同源，所以：
+
+      父页用 http://127.0.0.1:8000/parent-iframe.html
+      子页保持 http://localhost:8000/child-frame.html   ← src 写死 localhost
+
+    反之亦然。若两者同用 localhost，则是同源 iframe，
+    跨域路径（OOPIF / 合成器路由）就不会被真正触发，测试会假通过。
+  -->
+  <iframe id="score-frame" data-testid="score-frame"
+          src="http://localhost:8000/child-frame.html"
+          title="iframe 分数框"></iframe>
+
+  <div class="diag">
+    <div>父页 origin: <code id="parent-origin">—</code></div>
+    <div>iframe origin（跨域时读不到，显示 blocked 即为正确）: <code id="frame-origin">—</code></div>
+    <div>iframe 在顶层视口中的偏移: <code id="frame-offset">—</code></div>
+  </div>
+
+  <table>
+    <tr><th>项</th><th>说明</th></tr>
+    <tr><td><code>#score-frame</code></td><td>iframe 元素本身。拾取只到这里 = <b>没穿透</b>，是失败</td></tr>
+    <tr><td><code>#frame-score-input</code></td><td>iframe 内的真实输入框。拾取到它 = <b>穿透成功</b></td></tr>
+    <tr><td>frame 偏移</td><td>顶层坐标 = iframe 偏移 + frame 内局部坐标</td></tr>
+  </table>
+</div>
+
+<div class="paper" style="margin-top:14px">
+  <h3 style="margin:0 0 8px">父页可用的诊断接口</h3>
+  <p class="hint" style="margin:0">
+    跨域时父页无法访问子页 DOM（<code>contentWindow.document</code> 会抛
+    SecurityError）。这<b>正是</b>真实阅卷平台的情形，也是为什么要经 CDP 进入
+    对应 frame target，而不是在父页用 <code>querySelector</code> 硬找。
+  </p>
+</div>
+
+<script>
+(function () {
+  var f = document.getElementById('score-frame');
+  document.getElementById('parent-origin').textContent = location.origin;
+
+  function measure() {
+    var r = f.getBoundingClientRect();
+    document.getElementById('frame-offset').textContent =
+      'x=' + Math.round(r.left) + ', y=' + Math.round(r.top) +
+      ' (w=' + Math.round(r.width) + ', h=' + Math.round(r.height) + ')';
+    window.__frameOffset = { x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+
+  f.addEventListener('load', function () {
+    measure();
+    // 探测子页 origin：同源可读，跨域抛 SecurityError —— 这本身就是一个断言点
+    try {
+      var o = f.contentWindow.location.origin;
+      document.getElementById('frame-origin').textContent = o + '（同源，可读）';
+      window.__crossOrigin = false;
+    } catch (e) {
+      document.getElementById('frame-origin').textContent = 'blocked（跨域，符合预期）';
+      window.__crossOrigin = true;
+    }
+  });
+
+  window.addEventListener('resize', measure);
+  measure();
+
+  window.__fixture = { kind: 'iframe-parent', expectsCrossOrigin: true };
+})();
+</script>
+
+</body>
+</html>

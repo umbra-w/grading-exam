@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "created": "2026-10-23T11:39:32+08:00",
+  "contract": {
+    "kind": "file",
+    "path": "CONTRACT.md",
+    "sha256": "c793527e86d3a9aea9a76c131c9ffcfeca368e6ef52304304493856657e385bf",
+    "bytes": 7269,
+    "frozen_at": "2026-10-23T11:53:42+08:00",
+    "version": "contract_v1",
+    "decisions": {
+      "C1": "采纳契约枚举 选择/判断/填空/简答/计算/论述",
+      "C2": "full_score 条件必填（有标注则必有）",
+      "C3": "严格 > 阈值，且按题型粒度分层（填空 0.5，其余 1.0）"
+    }
+  },
+  "rubric": null,
+  "prompt": null,
+  "notes": [],
+  "updated": "2026-10-23T11:53:42+08:00"
+}

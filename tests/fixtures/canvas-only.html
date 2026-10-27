@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>夹具 3 · Canvas 渲染（无真实输入框）</title>
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; background: #f6f7f9; color: #1f2329; }
+  .paper { background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 16px; max-width: 760px; }
+  .hint { color: #6b7280; font-size: 12px; line-height: 1.7; }
+  canvas { border: 1px solid #e3e6ea; border-radius: 6px; display: block; background: #fff; cursor: text; }
+  .diag { margin-top: 12px; font-size: 12.5px; font-family: ui-monospace, Consolas, monospace; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+  th, td { border: 1px solid #e3e6ea; padding: 5px 8px; text-align: left; }
+  th { background: #f9fafb; }
+  .ok { color: #16a34a; } .warn { color: #d97706; } .err { color: #dc2626; }
+</style>
+</head>
+<body>
+
+<div class="paper">
+  <h2 style="margin:0 0 4px">第 20 题（满分 6 分）</h2>
+  <p class="hint">
+    夹具页 3 · 整页分数框与提交按钮都画在 canvas 上，<b>DOM 里没有任何 input / button</b>。
+    对应学科网 e卷通等 Canvas 渲染平台。自动化只能走「坐标点击 + 键盘模拟」。
+  </p>
+
+  <!--
+    ★ 本页的核心：canvas 不是 DOM 输入控件。
+    document.querySelector 找不到任何分数输入框 —— 这就模拟了
+    SPEC F1.3 描述的「分数输入框无法拾取」场景。
+  -->
+  <canvas id="stage" width="720" height="300" data-testid="stage"></canvas>
+
+  <div class="diag">
+    <div>DOM 内 input 数量：<code id="input-count">—</code>（应为 0，证明无法用元素拾取）</div>
+    <div>当前值：<code id="cur">—</code></div>
+    <div>提交时平台读到的值：<code id="submitted">—</code></div>
+    <div id="status">等待操作…</div>
+  </div>
+
+  <table>
+    <tr><th>坐标目标</th><th>canvas 内相对坐标</th><th>用途</th></tr>
+    <tr><td>分数框</td><td><code id="c-score">—</code></td><td>SPEC F1.3「分数框坐标」</td></tr>
+    <tr><td>提交按钮</td><td><code id="c-submit">—</code></td><td>SPEC F1.3「提交按钮坐标」</td></tr>
+    <tr><td>取消/清空</td><td><code id="c-clear">—</code></td><td>用于验证误点防护</td></tr>
+  </table>
+
+  <p class="hint" style="margin-top:10px">
+    自动化流程：<b>点击分数框坐标</b>（聚焦）→ <b>Input.insertText 写入分数</b> →
+    <b>点击提交按钮坐标</b>。三个动作都由顶层 target 的 <code>Input.dispatchMouseEvent</code>
+    派发，不能靠 DOM 层的 <code>click()</code>。
+  </p>
+</div>
+
+<script>
+(function () {
+  var cv = document.getElementById('stage');
+  var ctx = cv.getContext('2d');
+  var statusEl = document.getElementById('status');
+
+  // ---- 绘制布局常量：坐标由这些常量派生，避免各处硬编码数字漂移 ----
+  var LAYOUT = {
+    scoreBox: { x: 40, y: 90, w: 120, h: 46 },
+    submitBtn: { x: 190, y: 90, w: 110, h: 46 },
+    clearBtn: { x: 320, y: 90, w: 90, h: 46 }
+  };
+
+  var state = { value: '', focused: false, submitted: null, lastClick: null };
+
+  var R = function (b) { return { x: b.x, y: b.y, w: b.w, h: b.h, r: b.y + b.h / 2, rr: b.x + b.w / 2 }; };
+  function inBox(px, py, b) {
+    return px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.font = '15px system-ui, "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#1f2329';
+    ctx.fillText('第 20 题（canvas 渲染，满分 6 分）', 24, 34);
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '13px system-ui';
+    ctx.fillText('求 4 秒末的速度与 4 秒内位移。', 24, 60);
+
+    // 分数框
+    var sb = R(LAYOUT.scoreBox);
+    ctx.lineWidth = state.focused ? 2 : 1;
+    ctx.strokeStyle = state.focused ? '#2563eb' : '#d1d5db';
+    ctx.beginPath();
+    ctx.roundRect(LAYOUT.scoreBox.x, LAYOUT.scoreBox.y, LAYOUT.scoreBox.w, LAYOUT.scoreBox.h, 6);
+    ctx.stroke();
+
+    ctx.fillStyle = state.value ? '#1f2329' : '#9ca3af';
+    ctx.font = '17px system-ui';
+    ctx.fillText(state.value || '0', sb.x + 12, sb.r + 6);
+
+    if (state.focused) {
+      // 光标：caret 位置随文本长度右移，便于人工确认聚焦成功
+      var cw = ctx.measureText(state.value || '').width;
+      var cx = sb.x + 12 + cw + 1;
+      ctx.strokeStyle = '#2563eb';
+      ctx.beginPath();
+      ctx.moveTo(cx, sb.y + 10);
+      ctx.lineTo(cx, sb.y + LAYOUT.scoreBox.h - 10);
+      ctx.stroke();
+    }
+
+    // 提交按钮
+    ctx.fillStyle = '#2563eb';
+    ctx.beginPath();
+    ctx.roundRect(LAYOUT.submitBtn.x, LAYOUT.submitBtn.y, LAYOUT.submitBtn.w, LAYOUT.submitBtn.h, 6);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '15px system-ui';
+    ctx.fillText('提交', LAYOUT.submitBtn.x + 36, R(LAYOUT.submitBtn).r + 6);
+
+    // 清空按钮
+    ctx.strokeStyle = '#d1d5db';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(LAYOUT.clearBtn.x, LAYOUT.clearBtn.y, LAYOUT.clearBtn.w, LAYOUT.clearBtn.h, 6);
+    ctx.stroke();
+    ctx.fillStyle = '#4b5563';
+    ctx.fillText('清空', LAYOUT.clearBtn.x + 26, R(LAYOUT.clearBtn).r + 6);
+
+    // 调试网格：每 50px 一条，方便肉眼核对坐标换算对不对
+    ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+    ctx.lineWidth = 1;
+    for (var gx = 0; gx < cv.width; gx += 50) {
+      ctx.beginPath(); ctx.moveTo(gx, 130); ctx.lineTo(gx, cv.height); ctx.stroke();
+    }
+    for (var gy = 130; gy < cv.height; gy += 50) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cv.width, gy); ctx.stroke();
+    }
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || '';
+  }
+
+  // ---- 键盘输入：只有聚焦时接收 ----
+  document.addEventListener('keydown', function (e) {
+    if (!state.focused) return;
+    if (e.key >= '0' && e.key <= '9') {
+      state.value = (state.value + e.key).slice(0, 4);
+    } else if (e.key === '.') {
+      if (state.value.indexOf('.') === -1) state.value += '.';
+    } else if (e.key === 'Backspace') {
+      state.value = state.value.slice(0, -1);
+    } else if (e.key === 'Escape') {
+      state.focused = false;
+      setStatus('已失焦', 'warn');
+    } else {
+      return;
+    }
+    setStatus('键盘输入 isTrusted=' + e.isTrusted + ' → ' + state.value,
+              e.isTrusted ? 'ok' : 'warn');
+    render();
+  });
+
+  // 也监听 input 事件：CDP 的 Input.insertText 走的是这条路径，不发 keydown
+  document.addEventListener('input', function (e) {
+    if (!state.focused) return;
+    setStatus('insertText isTrusted=' + e.isTrusted + ' → ' + state.value,
+              e.isTrusted ? 'ok' : 'warn');
+    render();
+  });
+
+  cv.addEventListener('click', function (e) {
+    var r = cv.getBoundingClientRect();
+    var px = e.clientX - r.left;
+    var py = e.clientY - r.top;
+    state.lastClick = { x: px, y: py, isTrusted: e.isTrusted };
+
+    if (inBox(px, py, LAYOUT.scoreBox)) {
+      state.focused = true;
+      setStatus('已聚焦分数框 (canvas 内 ' + Math.round(px) + ',' + Math.round(py) + ') isTrusted=' + e.isTrusted, 'ok');
+    } else if (inBox(px, py, LAYOUT.submitBtn)) {
+      state.submitted = state.value === '' ? null : Number(state.value);
+      setStatus('已提交，平台读到 = ' + (state.submitted === null ? '空 → 平台不认' : state.submitted),
+                state.submitted === null ? 'err' : 'ok');
+      window.__canvasSubmit = { at: Date.now(), score: state.submitted };
+      state.focused = false;
+    } else if (inBox(px, py, LAYOUT.clearBtn)) {
+      state.value = '';
+      setStatus('已清空', 'warn');
+    } else {
+      state.focused = false;
+      setStatus('点击空白处，未命中任何目标 (canvas 内 ' + Math.round(px) + ',' + Math.round(py) + ')', 'warn');
+    }
+    render();
+  });
+
+  function render() {
+    document.getElementById('cur').textContent = state.value || '(空)';
+    document.getElementById('submitted').textContent = state.submitted === null ? '(未提交)' : state.submitted;
+    document.getElementById('input-count').textContent = String(document.querySelectorAll('input,textarea').length);
+    draw();
+  }
+
+  // 诊断接口
+  window.readCanvasValue = function () { return state.value === '' ? null : Number(state.value); };
+  window.readCanvasSubmitted = function () { return state.submitted; };
+  window.__fixture = {
+    kind: 'canvas-only',
+    layout: LAYOUT,
+    // 供自动化脚本取坐标：canvas 内相对坐标 → 需再叠加 canvas 的顶层偏移
+    targets: {
+      scoreInput: { x: LAYOUT.scoreBox.x + LAYOUT.scoreBox.w / 2, y: LAYOUT.scoreBox.y + LAYOUT.scoreBox.h / 2 },
+      submitButton: { x: LAYOUT.submitBtn.x + LAYOUT.submitBtn.w / 2, y: LAYOUT.submitBtn.y + LAYOUT.submitBtn.h / 2 }
+    }
+  };
+
+  // 展示坐标，便于手工核对
+  function showCoords() {
+    var t = window.__fixture.targets;
+    document.getElementById('c-score').textContent = Math.round(t.scoreInput.x) + ', ' + Math.round(t.scoreInput.y);
+    document.getElementById('c-submit').textContent = Math.round(t.submitButton.x) + ', ' + Math.round(t.submitButton.y);
+    document.getElementById('c-clear').textContent =
+      Math.round(LAYOUT.clearBtn.x + LAYOUT.clearBtn.w / 2) + ', ' + Math.round(LAYOUT.clearBtn.y + LAYOUT.clearBtn.h / 2);
+  }
+
+  // roundRect 兜底：老内核可能没有
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+      this.beginPath();
+      this.moveTo(x + r, y);
+      this.arcTo(x + w, y, x + w, y + h, r);
+      this.arcTo(x + w, y + h, x, y + h, r);
+      this.arcTo(x, y + h, x, y, r);
+      this.arcTo(x, y, x + w, y, r);
+      this.closePath();
+      return this;
+    };
+  }
+
+  showCoords();
+  render();
+})();
+</script>
+
+</body>
+</html>
