@@ -2,9 +2,9 @@ import { create } from 'zustand';
 import type { AppInfo } from '../preload/index';
 import type { LogEntry, PaperReport, TokenUsage } from '../shared/types';
 
-export type PageKey = 'single' | 'review' | 'paper' | 'browser' | 'analysis' | 'settings';
+export type PageKey = 'single' | 'review' | 'paper' | 'sheet' | 'browser' | 'analysis' | 'settings';
 
-const PAGE_KEYS: PageKey[] = ['single', 'review', 'paper', 'browser', 'analysis', 'settings'];
+const PAGE_KEYS: PageKey[] = ['single', 'review', 'paper', 'sheet', 'browser', 'analysis', 'settings'];
 
 function isPageKey(v: string): v is PageKey {
   return (PAGE_KEYS as string[]).includes(v);

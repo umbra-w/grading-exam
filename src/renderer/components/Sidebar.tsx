@@ -15,16 +15,12 @@ interface NavDef {
 }
 
 const NAV: NavDef[] = [
+  { key: 'sheet', label: '答题卡批改', glyph: '❐', title: '本地答题卡批改：切片批改、0 Token 客观题填涂识别、红笔批注与试卷导出', done: true },
+  { key: 'paper', label: '整卷阅卷', glyph: '▤', title: '批量识别与成绩录入：照片识别、客观题比对与总分汇总', done: true },
   { key: 'browser', label: '浏览器阅卷', glyph: '◈', title: '拾取与窗口已可用；连续阅卷待实现', done: true },
-  // 单题批改已实现（Phase 4）：客观题本地比对 + 主观题 AI 评分。
-  // 这里此前写着「待实现」并挂「未实现」标签——界面已经能用了，
-  // 标签还在说不能用。正好是 §6.4 那类「界面在说谎」。
   { key: 'single', label: '智能阅卷', glyph: '✎', title: '单题批改：客观题本地比对 + 主观题 AI 评分', done: true },
-  // 复核队列已实现（P1-8）：低置信度/有警示的分数会进队列，等人判断。
-  // 它的位置刻意紧挨"智能阅卷"——批改完就该看这里，而不是翻到最后。
   { key: 'review', label: '复核队列', glyph: '☑', title: '人工复核低置信度评分：改分、翻转评分点、确认或排除', done: true },
-  { key: 'paper', label: '整卷阅卷', glyph: '▤', title: '整卷批量批改：待实现', done: false },
-  { key: 'analysis', label: '学情分析', glyph: '◔', title: '学情报告与导出：待实现', done: false },
+  { key: 'analysis', label: '学情分析', glyph: '◔', title: '学情分析与教学建议报告', done: true },
   { key: 'settings', label: '设置', glyph: '⚙', title: 'AI 供应商与导出目录', done: true },
 ];
 

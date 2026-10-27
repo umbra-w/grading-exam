@@ -10,9 +10,12 @@ import { SinglePanel } from './panels/SinglePanel';
 import { ReviewPanel } from './panels/ReviewPanel';
 import { PaperPanel } from './panels/PaperPanel';
 import { AnalysisPanel } from './panels/AnalysisPanel';
+import { SheetPanel } from './panels/SheetPanel';
 
 function CurrentPanel({ page }: { page: PageKey }): JSX.Element {
   switch (page) {
+    case 'sheet':
+      return <SheetPanel />;
     case 'browser':
       return <BrowserPanel />;
     case 'single':
