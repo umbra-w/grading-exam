@@ -501,7 +501,7 @@ describe('提示词模板', () => {
 
 /* ----------------------------------------------------- compat 回归 */
 
-describe('compat —— 复刻里三次故障的防回归', () => {
+describe('compat —— 供应商调用与思考模式防回归', () => {
   it('deepseek 会关闭思考模式', () => {
     const body = buildRequestBody(CFG, [{ role: 'user', content: 'x' }]);
     expect(body.thinking).toEqual({ type: 'disabled' });

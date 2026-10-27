@@ -1,7 +1,7 @@
 {
   "name": "grading-exam",
   "version": "0.1.0",
-  "description": "Grading_exam · AI 阅卷助手（开源复刻版）— 本地运行、无后端、MIT",
+  "description": "Grading_exam · 桌面端 AI 智能阅卷助手与答题卡批改系统",
   "private": true,
   "type": "module",
   "license": "MIT",

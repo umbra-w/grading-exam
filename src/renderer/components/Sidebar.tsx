@@ -35,7 +35,7 @@ export function Sidebar(): JSX.Element {
           <span className="mark" />
           <span>Grading_exam</span>
         </div>
-        <small>AI 阅卷助手 · 开源版</small>
+        <small>AI 智能阅卷助手</small>
       </div>
 
       <div className="nav-group">功能</div>

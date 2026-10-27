@@ -24,7 +24,7 @@ function check(name, ok, detail) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`);
 }
 
-// 用最小主进程复刻真实 IPC 面，保证自检不依赖完整 main.ts 的业务逻辑
+// 用最小主进程模拟真实 IPC 面，保证自检不依赖完整 main.ts 的业务逻辑
 ipcMain.handle('smoke:ping', () => 'pong');
 
 app.whenReady().then(async () => {
