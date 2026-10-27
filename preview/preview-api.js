@@ -110,16 +110,14 @@ window.gradingExam = {
     },
     usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 },
   }),
-  aiExtractRubric: async () => ({
+  aiOptimizeCriteria: async () => ({
     ok: true,
-    rubric: {
-      stem: '题目题干',
-      questionType: 'short',
-      fullScore: 10,
-      referenceAnswer: '参考答案',
+    result: {
       scoringPoints: ['得分点1: 5分', '得分点2: 5分'],
+      supplementaryCorrect: ['等价代数解法亦可给分'],
+      supplementaryIncorrect: ['缺少单位扣1分'],
+      rawText: '{}',
     },
-    usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 },
   }),
   aiVisionAnswers: async () => ({ ok: true, text: '', usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 }, diag: { model: 'x' } }),
 

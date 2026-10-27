@@ -150,6 +150,8 @@ const api = {
   aiParsePaper: (payload: Parameters<IPC['ai:parsePaper']>[0]) => invoke('ai:parsePaper', payload),
   aiExtractRubric: (payload: Parameters<IPC['ai:extractRubric']>[0]) =>
     invoke('ai:extractRubric', payload),
+  aiOptimizeCriteria: (payload: Parameters<IPC['ai:optimizeCriteria']>[0]) =>
+    invoke('ai:optimizeCriteria', payload),
   aiVisionAnswers: (payload: Parameters<IPC['ai:visionAnswers']>[0]) =>
     invoke('ai:visionAnswers', payload),
 

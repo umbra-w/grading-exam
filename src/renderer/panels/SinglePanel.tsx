@@ -63,6 +63,8 @@ export function SinglePanel(): JSX.Element {
 
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
+  const [optDetails, setOptDetails] = useState<{ correct: string[]; incorrect: string[] } | null>(null);
 
   /* ------------------------------------------------------ 学生答案（P4-4） */
   const [answerText, setAnswerText] = useState('');
@@ -81,6 +83,37 @@ export function SinglePanel(): JSX.Element {
 
   const typeMeta = TYPE_OPTIONS.find((t) => t.v === qType)!;
   const isObjective = typeMeta.objective;
+
+
+  async function onOptimizeCriteria(): Promise<void> {
+    const raw = reference.trim() || pointsText.trim() || stem.trim();
+    if (!raw) {
+      log('warn', '请先填写参考答案或题干，再进行细则扩充');
+      return;
+    }
+    setOptimizing(true);
+    log('info', 'AI 正在分析并扩充评分细则...');
+    try {
+      const res = await window.gradingExam.aiOptimizeCriteria({
+        rawCriteria: `参考答案：${reference}\n题干：${stem}\n现有细则：${pointsText}`,
+        fullScore,
+      });
+      if (res.ok && res.result) {
+        setPointsText(res.result.scoringPoints.join('\n'));
+        setOptDetails({
+          correct: res.result.supplementaryCorrect,
+          incorrect: res.result.supplementaryIncorrect,
+        });
+        log('ok', `细则扩充成功，生成 ${res.result.scoringPoints.length} 个采分要点`);
+      } else {
+        log('warn', res.error || '细则扩充未返回有效结构');
+      }
+    } catch (err) {
+      log('error', '细则扩充失败: ' + String(err));
+    } finally {
+      setOptimizing(false);
+    }
+  }
 
   function log(level: 'info' | 'warn' | 'error' | 'ok', message: string): void {
     pushLog({ ts: Date.now(), level, message });
@@ -418,13 +451,42 @@ export function SinglePanel(): JSX.Element {
               />
             </div>
             <div className="field">
-              <label>得分点（每行一个）</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ margin: 0 }}>得分点（每行一个）</label>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '2px 8px', fontSize: '12px' }}
+                  onClick={() => void onOptimizeCriteria()}
+                  disabled={optimizing || busy}
+                  title="根据参考答案自动拆解得分点、补充正确/错误情形"
+                >
+                  {optimizing ? '✨ 细则扩充中…' : '✨ AI 智能扩充细则'}
+                </button>
+              </div>
               <textarea
                 rows={4}
                 value={pointsText}
                 onChange={(e) => setPointsText(e.target.value)}
                 placeholder={'写出 M(CaCO₃) = 40+12+16×3 的算式\n正确计算得 100\n标注单位 g/mol'}
               />
+              {optDetails && (
+                <div className="notice" style={{ marginTop: '8px' }}>
+                  <b>✨ 细则智能扩充完成</b>
+                  {optDetails.correct.length > 0 && (
+                    <div style={{ marginTop: '4px', fontSize: '12px' }}>
+                      <span className="badge green" style={{ marginRight: '6px' }}>补充正确情形</span>
+                      {optDetails.correct.join('；')}
+                    </div>
+                  )}
+                  {optDetails.incorrect.length > 0 && (
+                    <div style={{ marginTop: '4px', fontSize: '12px' }}>
+                      <span className="badge amber" style={{ marginRight: '6px' }}>补充错误情形</span>
+                      {optDetails.incorrect.join('；')}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -546,6 +608,16 @@ export function SinglePanel(): JSX.Element {
               <span className="score">
                 {grade.score} / {fullScore}
               </span>
+              {grade.paperState && grade.paperState !== 'normal' && (
+                <span className={`badge ${grade.paperState === 'blank' ? 'gray' : (grade.paperState === 'task_finished' ? 'purple' : 'pink')}`}>
+                  {grade.paperState === 'blank' ? '空白卷' : (grade.paperState === 'task_finished' ? '任务完成' : '错位答卷')}
+                </span>
+              )}
+              {grade.mathIntegrity && (
+                <span className={`badge ${grade.mathIntegrity.ok ? 'green' : 'amber'}`} title={grade.mathIntegrity.reason}>
+                  {grade.mathIntegrity.ok ? (grade.mathExpression ? `✓ 算术对账自洽 (${grade.mathExpression})` : '✓ 算式自洽') : '⚠ 算术对账存疑'}
+                </span>
+              )}
               <span className={`badge ${grade.confidence >= 0.75 ? 'green' : 'amber'}`}>
                 置信度 {grade.confidence.toFixed(2)}
               </span>

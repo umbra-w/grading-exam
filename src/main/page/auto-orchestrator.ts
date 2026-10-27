@@ -535,6 +535,14 @@ export function nextAutoStep(state: AutoState, prev?: AutoStepResult): AutoStepR
        * 当作"待修正分数"——没有任何分数可供修正，进队只会让队列里
        * 多一条没有分数、无法处理的条目。
        */
+      if (prev.grade.paperState === 'task_finished') {
+        return endRun(
+          state,
+          'done',
+          '阅卷平台画面为任务完成或无待阅卷指示图，连续批改已安全停止。',
+        );
+      }
+
       if (prev.grade.ungradable) {
         const failed = failPaper(
           state,

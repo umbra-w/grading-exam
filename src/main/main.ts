@@ -42,6 +42,7 @@ import {
   gradeQuestion,
   gradeQuestionMulti,
   extractRubric,
+  optimizeCriteria,
   parsePaper,
   testConnection,
   visionAnswers,
@@ -1059,6 +1060,22 @@ function registerAIHandlers(): void {
     pushLog(res.ok ? 'ok' : 'error', res.ok ? '试卷解析完成' : `试卷解析失败：${res.diag.rawSnippet ?? res.diag.errorCode}`);
     return { ok: res.ok, text: res.rawText, usage: res.usage, diag: res.diag, data: res.data };
   });
+
+  ipcMain.handle(
+    'ai:optimizeCriteria',
+    async (
+      _e,
+      payload: { rawCriteria: string; subject?: string; fullScore?: number },
+    ) => {
+      pushLog('info', 'AI 智能扩充评分细则...');
+      const res = await optimizeCriteria(loadSettings().ai, payload.rawCriteria, {
+        subject: payload.subject,
+        fullScore: payload.fullScore,
+      });
+      pushLog(res.ok ? 'ok' : 'warn', res.ok ? '评分细则扩充完成' : `细则扩充失败: ${res.error}`);
+      return res;
+    },
+  );
 
   ipcMain.handle(
     'ai:extractRubric',

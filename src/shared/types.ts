@@ -243,6 +243,18 @@ export interface AppInfo {
   storeSource: 'explicit' | 'portable' | 'default';
 }
 
+export type PaperState = 'normal' | 'blank' | 'task_finished' | 'mismatched';
+
+export interface MathIntegritySummary {
+  ok: boolean;
+  exprSum?: number;
+  subSum?: number;
+  totalScore: number;
+  suggestedScore?: number;
+  discrepancy: number;
+  reason?: string;
+}
+
 export interface GradeResult {
   score: number;
   comment: string;
@@ -256,6 +268,14 @@ export interface GradeResult {
   reviewRequested: boolean;
   /** 清洗过程中发现并修正的问题，进日志 */
   warnings: string[];
+  /** 试卷四状态分类（正常卷 / 空白卷 / 任务完成 / 错位答卷） */
+  paperState?: PaperState;
+  /** 各小题/得分点分数列表 */
+  subScores?: number[];
+  /** 模型给出的算术表达式（如 "1+2+2+0=5"） */
+  mathExpression?: string;
+  /** 本地四则运算对账审计结果 */
+  mathIntegrity?: MathIntegritySummary;
   /**
    * 这份**没有被评分**（图片质量不合格等），而不是"学生得了 0 分"。
    *
@@ -572,6 +592,13 @@ export interface RecoverySession {
   unsavedText?: string;
 }
 
+export interface OptimizedCriteriaResult {
+  scoringPoints: string[];
+  supplementaryCorrect: string[];
+  supplementaryIncorrect: string[];
+  rawText: string;
+}
+
 export interface ExtractedRubric {
   stem: string;
   questionType: QuestionType;
@@ -693,6 +720,11 @@ export interface IPC {
     rawText?: string;
     error?: string;
   };
+  'ai:optimizeCriteria': (payload: {
+    rawCriteria: string;
+    subject?: string;
+    fullScore?: number;
+  }) => { ok: boolean; result?: OptimizedCriteriaResult; error?: string };
   'ai:visionAnswers': (payload: {
     images: ImagePart[];
     questionCount: number;

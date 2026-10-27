@@ -286,7 +286,7 @@ pnpm ui:verify     # 打包 → 起服务 → 逐面板截图 → 断言 → 对
 | **假桥一致性防漂移** | ✅ | `tests/preview-parity.test.ts` + 9 项（已验证会真红） |
 | **复核队列（判定 + 界面）** | ✅ | `ai/review.ts` 72 项 + `ReviewPanel.tsx` + 4 个 `review:*` 通道 |
 | CDP 与窗口编排 | ⚠ 薄绑定，**未验证** | 依赖真机（见 §3） |
-| 单元测试总数 | ✅ | **861 项全过（32 套件）** |
+| 单元测试总数 | ✅ | **879 项全过（34 套件）** |
 | 评测指标库 | ✅ | 33 项自测 / 流水线 12 项自测 |
 | **Electron GUI 启动验证** | ❌ **受环境阻塞** | 见 §3 |
 
@@ -387,7 +387,7 @@ cd C:\Users\admin\Desktop\_agent_workspace\Grading_exam
 
 pnpm typecheck                 # 双 project 类型检查，两侧 exit=0
 pnpm build                     # electron-vite 三端构建
-pnpm test                      # vitest：861 项全过
+pnpm test                      # vitest：879 项全过
 pnpm metrics:selftest          # 指标库：33 项全过
 pnpm eval:selftest             # 评测流水线：12 项全过
 pnpm validate:dataset          # 数据集契约校验
@@ -403,7 +403,7 @@ pnpm verify:all                # typecheck + test + ipc:check + 数据 + 冻结 
 实测结果（本轮末）：
 
 - `tsc` 双侧 `exit=0`；`electron-vite build` 三端全过
-- `vitest` **861 passed**（32 套件）：
+- `vitest` **879 passed**（34 套件）：
   review 72 / geometry 66 / ai 60 / picker 54 / ensemble 51 / locator 45 /
   objective 39 / autoloop 37 / selector 35 / parse 34 / isolation 19 /
   pick-protocol 16 / preview-parity 9

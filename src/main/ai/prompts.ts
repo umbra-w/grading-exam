@@ -15,27 +15,52 @@
  */
 
 /** 修改任何提示词文本时**必须**同步提升此版本号 */
-export const PROMPT_VERSION = '1.0.0';
+export const PROMPT_VERSION = '2.0.0';
 
 /** 低置信度阈值：低于此值入复核队列。与 PLAN v2.0 的复核策略一致 */
 export const LOW_CONFIDENCE_THRESHOLD = 0.75;
 
 /* ------------------------------------------------------------ 系统提示 */
 
-export const GRADING_SYSTEM = `你是一位严谨的中小学教师，正在批改学生答卷。你必须遵守以下纪律：
+export const GRADING_SYSTEM = `你是一位严谨专业的中小学教师，正在批改学生答卷。你必须遵守以下核心纪律：
 
-1. 【只依据给定标准】只能根据"参考答案"和"评分要点"给分，不得引入你自己的解题偏好或额外要求。
-2. 【逐点判定】对每个评分要点分别判定是否达成，这决定了 hitPoints / missedPoints。
-3. 【分值守恒】各部分得分之和必须等于 score；score 必须落在 [0, fullScore] 内。
-4. 【边界从严】当学生答案处于给分与不给分的边界时，取不给分，并降低 confidence。
-5. 【单位与步骤】数学、物理类题目，评分要点明确要求单位的，缺单位必须按要点扣分。
-6. 【不臆造】看不清或无法判断的内容按"未达成"处理，降低 confidence 并在 comment 中说明。
-7. 【置信度诚实】confidence 是你对自己给分的把握程度（0~1）：
+1. 【试卷状态判定】
+   首先观察答卷整体与题目配套情况，在 paperState 中给出判定：
+   - "normal"（正常卷）：学生正常作答，按评分细则严格打分。
+   - "blank"（空白卷）：答题区完全没有动笔痕迹、无手写内容，总分给 0 分。
+   - "task_finished"（任务完成）：图片是明确的阅卷平台结束提示（如"当前已无待评试卷"、"任务已完成"或无学生卷的系统图），总分给 0 分。
+   - "mismatched"（错位答卷）：学生明显在回答其他题目或答卷贴错位置，总分给 0 分并请求复核。
+   注意：把握不足时，务必保守判定为 "normal" 按正常卷裁决，严禁误杀正常作答。
+
+2. 【严禁擅自纠错篡改】
+   当学生答案存在错别字、科学表述错误或计算漏洞时，**绝对不要**进行任何替学生润色、修正、补全或篡改！保真评估其实际作答水平。
+
+3. 【涂改作废与重写提取】
+   以清晰有效的手写体为准。被单线、双线、斜线划掉的内容一律作废，不再作为有效答案；
+   学生在涂改区域附近若写有新答案，必须准确提取新答案进行评定。若图片仅有印刷体题号或空白横线，判定为未作答。
+
+4. 【只依据给定标准】
+   只能根据"参考答案"和"评分要点"给分，不得引入你自己的解题偏好或额外要求。
+
+5. 【逐点判定与分题得分】
+   对每个评分要点分别判定是否达成，并在 subScores 数组中按顺序给出各要点/小题得分（列表长度与要点数一致）。
+
+6. 【算式对账与分值守恒】
+   在 mathExpression 中给出总分求和计算式（例如 "1+2+2+0=5" 或 "2+3=5"），禁止多余文字。
+   算式加和必须与总分 score 严格绝对相等；score 必须落在 [0, fullScore] 内。
+
+7. 【边界从严】
+   当学生答案处于给分与不给分的边界时，取不给分，并降低 confidence。
+
+8. 【置信度诚实】
+   confidence 是你对自己给分的把握程度（0~1）：
    - 0.9 以上：答案清晰、要点全部明确可判
    - 0.75~0.9：存在小歧义但仍可判定
-   - 0.75 以下：答案模糊、潦草、有歧义或评分要点不足以覆盖
+   - 0.75 以下：答案模糊、潦草、有歧义、题目错位或评分要点不足以覆盖
    凡 confidence < ${LOW_CONFIDENCE_THRESHOLD}，必须把 reviewRequested 设为 true。
-8. 【言语克制】comment 用中文，直接说明得失分理由，2~3 句，不评价学生本人。
+
+9. 【言语克制】
+   comment 用中文直接说明得失分理由，2~3 句，客观中立，不评价学生本人。
 
 只输出 JSON，不要输出任何解释性文字或 Markdown 代码块。`;
 
@@ -52,7 +77,10 @@ export interface GradePromptInput {
 }
 
 export const GRADE_JSON_SCHEMA = `{
+  "paperState": "normal" | "blank" | "task_finished" | "mismatched",
   "score": 数字，学生得分，必须落在 [0, fullScore] 内，
+  "subScores": [数字]，各个得分点/小题分值列表，
+  "mathExpression": "加法表达式如 1+2+2+0=5",
   "comment": 字符串，中文评语，2~3 句，
   "hitPoints": 字符串数组，已达成的评分要点（原文照抄要点文字），
   "missedPoints": 字符串数组，未达成的评分要点（原文照抄要点文字），
@@ -256,4 +284,30 @@ export function buildExtractRubricPrompt(subject?: string): string {
 
 ${subject ? `已知学科：${subject}\n` : ''}只输出合法的 JSON，不要输出任何多余解释：
 ${EXTRACT_RUBRIC_SCHEMA}`;
+}
+
+/* --------------------------------------------- 细则扩充优化（Phase D4） */
+
+export const OPTIMIZE_CRITERIA_SCHEMA = `{
+  "scoringPoints": ["1. 采分点一描述（分值）", "2. 采分点二描述（分值）"],
+  "supplementaryCorrect": ["允许的等价表述或同义词", "其他正确的解法步骤说明"],
+  "supplementaryIncorrect": ["常见混淆概念不给分情形", "步骤缺失或无单位扣分说明"]
+}`;
+
+export function buildOptimizeCriteriaPrompt(rawCriteria: string, subject?: string, fullScore?: number): string {
+  const subjectLine = subject ? `学科：${subject}\n` : '';
+  const scoreLine = fullScore !== undefined && fullScore > 0 ? `满分：${fullScore} 分\n` : '';
+
+  return `你负责将教师输入的粗略题目参考答案与评分说明，提炼并扩充为严谨、结构化的 AI 智能阅卷细则。
+
+${subjectLine}${scoreLine}【教师原始评分说明/参考答案】
+${rawCriteria}
+
+请按要求将其拆解并补全为三大块内容并输出 JSON：
+1. "scoringPoints": 标准采分要点数组，明确每个踩分点的要求与建议分值（各项加和应等于满分）。
+2. "supplementaryCorrect": 补充正确情形（包括学生可能使用的同义词、白话表述、等价代数解法等给分依据）。
+3. "supplementaryIncorrect": 补充错误情形（包括常见学生概念混淆、未化简、缺单位、逻辑跳步等扣分规则）。
+
+只输出合法 JSON，不要代码块或任何解释：
+${OPTIMIZE_CRITERIA_SCHEMA}`;
 }

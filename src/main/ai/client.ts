@@ -20,7 +20,9 @@ import type {
   ImagePart,
   QuestionType,
   TokenUsage,
+  PaperState,
 } from '../../shared/types';
+import { verifyMathIntegrity } from './math-integrity';
 import {
   DEFAULT_ENSEMBLE,
   judgeEnsemble,
@@ -41,6 +43,7 @@ import {
   buildPingPrompt,
   buildVisionAnswersPrompt,
   buildExtractRubricPrompt,
+  buildOptimizeCriteriaPrompt,
   type GradePromptInput,
 } from './prompts';
 
@@ -332,12 +335,34 @@ export function sanitizeGradeResult(raw: unknown, fullScore: number): GradeResul
   const obj = raw as Record<string, unknown> | null;
   if (!obj || typeof obj !== 'object') return null;
 
-  const rawScore = asNumber(obj.score);
-  if (rawScore === null) {
-    return null; // 没有可用分数，一律判失败
+  // 1. 提取试卷四状态 (正常/空白/任务完成/错位)
+  let paperState: PaperState = 'normal';
+  const rawState = asString(obj.paperState || obj['试卷状态']).toLowerCase();
+  if (rawState.includes('blank') || rawState.includes('空白')) {
+    paperState = 'blank';
+  } else if (rawState.includes('finish') || rawState.includes('完成') || rawState.includes('结束')) {
+    paperState = 'task_finished';
+    warnings.push('检测到平台阅卷已完成指示图');
+  } else if (rawState.includes('mismatch') || rawState.includes('错位') || rawState.includes('其他题目')) {
+    paperState = 'mismatched';
+    warnings.push('检测到疑似错位答卷或答非所问，强制置入复核队列');
   }
 
-  let score = rawScore;
+  const rawScore = asNumber(obj.score);
+  if (rawScore === null) {
+    // 特殊状态下允许没有显式分数时按 0 处理
+    if (paperState === 'blank' || paperState === 'task_finished' || paperState === 'mismatched') {
+      // 允许继续按 0 分结算
+    } else {
+      return null; // 没有可用分数且不是特殊状态，一律判失败
+    }
+  }
+
+  let score = rawScore ?? 0;
+  if (paperState === 'blank' || paperState === 'task_finished' || paperState === 'mismatched') {
+    score = 0;
+  }
+
   if (score < 0) {
     warnings.push(`模型给出负分 ${score}，已夹到 0`);
     score = 0;
@@ -360,7 +385,6 @@ export function sanitizeGradeResult(raw: unknown, fullScore: number): GradeResul
     confidence = 0.5;
   }
   if (confidence > 1) {
-    // 有些模型用 0~100 表示百分比
     if (confidence <= 100) {
       warnings.push(`confidence=${confidence} 疑似百分制，已归一化为 ${(confidence / 100).toFixed(2)}`);
       confidence = confidence / 100;
@@ -375,14 +399,41 @@ export function sanitizeGradeResult(raw: unknown, fullScore: number): GradeResul
   }
 
   let reviewRequested = obj.reviewRequested === true;
-  if (confidence < LOW_CONFIDENCE_THRESHOLD && !reviewRequested) {
+  if (paperState === 'mismatched') {
+    confidence = Math.min(confidence, 0.3);
+    reviewRequested = true;
+  } else if (paperState === 'task_finished') {
+    reviewRequested = false;
+  } else if (paperState === 'blank') {
+    reviewRequested = false;
+  }
+
+  // 2. 四则运算对账 (sizhejisuan)
+  let subScores: number[] | undefined;
+  if (Array.isArray(obj.subScores)) {
+    subScores = obj.subScores.map((v) => asNumber(v) ?? 0);
+  }
+  const mathExpression = asString(obj.mathExpression || obj['分数计算']);
+  const mathIntegrity = verifyMathIntegrity({
+    score,
+    subScores,
+    mathExpression: mathExpression || undefined,
+  });
+
+  if (!mathIntegrity.ok && mathIntegrity.reason && paperState === 'normal') {
+    warnings.push(`[算术对账] ${mathIntegrity.reason}`);
+    confidence = Math.min(confidence, 0.6);
+    reviewRequested = true;
+  }
+
+  if (confidence < LOW_CONFIDENCE_THRESHOLD && !reviewRequested && paperState !== 'task_finished' && paperState !== 'blank') {
     warnings.push(
       `confidence=${confidence.toFixed(3)} 低于阈值 ${LOW_CONFIDENCE_THRESHOLD}，已强制置 reviewRequested=true`,
     );
     reviewRequested = true;
   }
 
-  const comment = asString(obj.comment);
+  const comment = asString(obj.comment) || (paperState === 'blank' ? '学生未作答（空白卷）' : (paperState === 'mismatched' ? '答非所问/疑似错位答卷' : ''));
 
   return {
     score,
@@ -392,6 +443,10 @@ export function sanitizeGradeResult(raw: unknown, fullScore: number): GradeResul
     confidence,
     reviewRequested,
     warnings,
+    paperState,
+    subScores,
+    mathExpression: mathExpression || undefined,
+    mathIntegrity,
     promptVersion: PROMPT_VERSION,
     promptHash: PROMPT_SET_HASH,
   };
@@ -685,3 +740,56 @@ export function newRunId(): string {
 /* -------------------------------------------------------------- 内部 */
 
 export { DEFAULT_MAX_TOKENS };
+export interface OptimizedCriteriaResult {
+  scoringPoints: string[];
+  supplementaryCorrect: string[];
+  supplementaryIncorrect: string[];
+  rawText: string;
+}
+
+/**
+ * 细则结构化扩充优化器 (借鉴木鱼 youhua_prompt)
+ */
+export async function optimizeCriteria(
+  cfg: AIConfig,
+  rawCriteria: string,
+  options: { subject?: string; fullScore?: number; signal?: AbortSignal } = {},
+): Promise<{ ok: boolean; result?: OptimizedCriteriaResult; error?: string }> {
+  if (!rawCriteria.trim()) {
+    return { ok: false, error: '原始评分细则不能为空' };
+  }
+
+  const prompt = buildOptimizeCriteriaPrompt(rawCriteria, options.subject, options.fullScore);
+  const callRes = await callAI(
+    cfg,
+    [
+      { role: 'system', content: '你是一位精通国家命题与中高考阅卷标准的资深学科专家，擅长将简要答案拆解为评分细则。' },
+      { role: 'user', content: prompt },
+    ],
+    { signal: options.signal, temperature: 0.2 },
+  );
+
+  if (!callRes.ok) {
+    return { ok: false, error: callRes.diag?.rawSnippet || '调用大模型扩充细则失败' };
+  }
+
+  const parsed = parseJsonLoose(callRes.text);
+  if (!parsed || !parsed.value || typeof parsed.value !== 'object') {
+    return { ok: false, error: '模型返回内容无法解析为细则 JSON: ' + callRes.text.slice(0, 100) };
+  }
+
+  const obj = parsed.value as Record<string, unknown>;
+  const scoringPoints = asStringArray(obj.scoringPoints);
+  const supplementaryCorrect = asStringArray(obj.supplementaryCorrect);
+  const supplementaryIncorrect = asStringArray(obj.supplementaryIncorrect);
+
+  return {
+    ok: true,
+    result: {
+      scoringPoints: scoringPoints.length > 0 ? scoringPoints : [rawCriteria.trim()],
+      supplementaryCorrect,
+      supplementaryIncorrect,
+      rawText: callRes.text,
+    },
+  };
+}
