@@ -99,6 +99,28 @@ window.gradingExam = {
   aiGrade: async () => ({ ok: true, text: '', usage: { prompt: 900, completion: 120, total: 1020, costCNY: 0.02 }, diag: { model: 'x' } }),
   aiGradeMulti: async () => ({ ok: true, text: '', usage: { prompt: 2700, completion: 360, total: 3060, costCNY: 0.06 }, diag: { model: 'x' } }),
   aiParsePaper: async () => ({ ok: true, text: '', usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 }, diag: { model: 'x' } }),
+  aiExtractRubric: async () => ({
+    ok: true,
+    rubric: {
+      stem: '题目题干',
+      questionType: 'short',
+      fullScore: 10,
+      referenceAnswer: '参考答案',
+      scoringPoints: ['得分点1: 5分', '得分点2: 5分'],
+    },
+    usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 },
+  }),
+  aiExtractRubric: async () => ({
+    ok: true,
+    rubric: {
+      stem: '题目题干',
+      questionType: 'short',
+      fullScore: 10,
+      referenceAnswer: '参考答案',
+      scoringPoints: ['得分点1: 5分', '得分点2: 5分'],
+    },
+    usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 },
+  }),
   aiVisionAnswers: async () => ({ ok: true, text: '', usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 }, diag: { model: 'x' } }),
 
   browserOpen: async () => ({ ok: true }),
@@ -270,6 +292,17 @@ window.gradingExam = {
     },
   }),
 
+  aiExtractRubric: async () => ({
+    ok: true,
+    rubric: {
+      stem: '题目题干',
+      questionType: 'short',
+      fullScore: 10,
+      referenceAnswer: '参考答案',
+      scoringPoints: ['得分点1: 5分', '得分点2: 5分'],
+    },
+    usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 },
+  }),
   aiVisionAnswers: async () => ({
     ok: true,
     text: '{}',

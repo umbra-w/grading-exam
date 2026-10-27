@@ -148,6 +148,8 @@ const api = {
    */
   aiGradeMulti: (payload: Parameters<IPC['ai:gradeMulti']>[0]) => invoke('ai:gradeMulti', payload),
   aiParsePaper: (payload: Parameters<IPC['ai:parsePaper']>[0]) => invoke('ai:parsePaper', payload),
+  aiExtractRubric: (payload: Parameters<IPC['ai:extractRubric']>[0]) =>
+    invoke('ai:extractRubric', payload),
   aiVisionAnswers: (payload: Parameters<IPC['ai:visionAnswers']>[0]) =>
     invoke('ai:visionAnswers', payload),
 

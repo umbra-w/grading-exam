@@ -391,8 +391,9 @@ export function nextAutoStep(state: AutoState, prev?: AutoStepResult): AutoStepR
         `missing_picks:${missing.join(',')}`,
       );
     }
-    if (cfg.maxPapers > 0 && state.handled >= cfg.maxPapers) {
-      return endRun(state, 'done', `已达到设定的 ${cfg.maxPapers} 份上限。`);
+    const maxLimit = cfg.mode === 'trial' ? 1 : cfg.maxPapers;
+    if (maxLimit > 0 && state.handled >= maxLimit) {
+      return endRun(state, 'done', cfg.mode === 'trial' ? '试运行已完成 1 份验证。' : `已达到设定的 ${cfg.maxPapers} 份上限。`);
     }
     // 第一份也先等一等：页面没加载好就截图会拿到空白图，
     // 而空白图会被模型当成"学生没作答"——静默错分
@@ -639,6 +640,9 @@ export function nextAutoStep(state: AutoState, prev?: AutoStepResult): AutoStepR
 
       // ★ 安全不变量：只有 top 模式提交
       if (!modeSubmits(cfg.mode)) {
+        if (cfg.mode === 'trial') {
+          return { step: null, state: succeedPaper(state, '试运行成功：第 1 份已完成评分与填分验证，未提交。') };
+        }
         return { step: null, state: succeedPaper(state, '分数已填入，未提交（需人工提交）。') };
       }
       const btnPt = topPoint(cfg.picks.submitButton);

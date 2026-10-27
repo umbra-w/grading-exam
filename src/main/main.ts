@@ -40,6 +40,7 @@ import {
   EMPTY_USAGE,
   gradeQuestion,
   gradeQuestionMulti,
+  extractRubric,
   parsePaper,
   testConnection,
   visionAnswers,
@@ -1014,6 +1015,17 @@ function registerAIHandlers(): void {
     pushLog(res.ok ? 'ok' : 'error', res.ok ? '试卷解析完成' : `试卷解析失败：${res.diag.rawSnippet ?? res.diag.errorCode}`);
     return { ok: res.ok, text: res.rawText, usage: res.usage, diag: res.diag, data: res.data };
   });
+
+  ipcMain.handle(
+    'ai:extractRubric',
+    async (_e, payload: { image: ImagePart; subject?: string }) => {
+      pushLog('info', '视觉提取评分细则截图...');
+      const res = await extractRubric(loadSettings().ai, payload.image, payload.subject);
+      record(res.usage, '细则提取');
+      pushLog(res.ok ? 'ok' : 'warn', res.ok ? '评分细则提取完成' : `细则提取未完全结构化：${res.error}`);
+      return { ok: res.ok, rubric: res.rubric, rawText: res.rawText, error: res.error };
+    },
+  );
 
   ipcMain.handle(
     'ai:visionAnswers',

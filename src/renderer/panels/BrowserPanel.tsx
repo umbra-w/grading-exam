@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import type { BrowserKernel, GradingMode, PickKind, PickResult } from '@shared/types';
+import { PLATFORM_PRESETS, getPlatformPresetById } from '@shared/platform-presets';
 
 interface PickRow {
   kind: PickKind;
@@ -18,20 +19,25 @@ const PICKS: PickRow[] = [
 /** 三种批阅模式的说明。把风险差异直接写在卡片上，不藏在下拉里 */
 const MODES: Array<{ key: GradingMode; name: string; desc: string; warn?: string }> = [
   {
-    key: 'standard',
-    name: '标准模式',
-    desc: '仅 AI 评分，不自动填分。结果需要你自己动手录入。',
+    key: 'trial',
+    name: '🧪 试运行模式',
+    desc: '仅改 1 份，填入分数后等待人工确认，绝不自动提交。首次在平台批阅强烈推荐！',
   },
   {
     key: 'steady',
-    name: '稳健模式',
+    name: '🛡️ 稳健模式',
     desc: '填分前停下来等你确认；软件不会替你提交，提交由你手动完成。默认推荐。',
   },
   {
     key: 'top',
-    name: '顶尖模式',
-    desc: '截图→评分→填分→真的按下平台的提交按钮，全程无人值守。',
+    name: '⚡ 自动模式',
+    desc: '截图→评分→填分→按下平台的提交按钮，连续无人值守。限已充分验证的平台。',
     warn: '会真实提交',
+  },
+  {
+    key: 'standard',
+    name: '仅评分模式',
+    desc: '仅 AI 评分，不自动填分。结果需要你自己动手录入。',
   },
 ];
 
@@ -59,6 +65,42 @@ export function BrowserPanel(): JSX.Element {
   const [maxPapers, setMaxPapers] = useState(0);
   const [throttleMs, setThrottleMs] = useState(800);
   const [nextPaperTimeoutSec, setNextPaperTimeoutSec] = useState(60);
+  const [presetId, setPresetId] = useState('zhixue');
+
+  async function handleExtractRubric(): Promise<void> {
+    try {
+      const res = await window.gradingExam.pickFile({
+        filters: [{ name: '评分细则截图', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        multi: false,
+      });
+      if (res.canceled || !res.paths[0]) return;
+      setBusy(true);
+      log('info', '正在通过 AI 视觉解析评分细则截图...');
+      const read = await window.gradingExam.readImages([res.paths[0]]);
+      if (!read.ok || !read.images?.[0]) {
+        log('error', '未能读取所选截图');
+        return;
+      }
+      const base64 = read.images[0].dataUrl.split(',')[1] ?? '';
+      const extRes = await window.gradingExam.aiExtractRubric({
+        image: { data: base64, mime: 'image/jpeg' },
+      });
+      if (extRes.ok && extRes.rubric) {
+        const r = extRes.rubric;
+        if (r.stem) setStem(r.stem);
+        if (r.fullScore) setFullScore(r.fullScore);
+        if (r.referenceAnswer) setReference(r.referenceAnswer);
+        if (r.scoringPoints?.length) setPoints(r.scoringPoints.join('\n'));
+        log('ok', `已自动提取细则：满分 ${r.fullScore} 分，得分点 ${r.scoringPoints.length} 条`);
+      } else {
+        log('warn', extRes.error ?? '未完全解析出结构化细则');
+      }
+    } catch (err) {
+      log('error', `提取细则出错：${(err as Error)?.message ?? String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const [opened, setOpened] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -341,6 +383,31 @@ export function BrowserPanel(): JSX.Element {
             </select>
           </div>
 
+          <div className="field" style={{ gridColumn: 'span 3', marginBottom: 6 }}>
+            <label>网阅平台预设（内置选择器候选与安全节流建议）</label>
+            <select
+              value={presetId}
+              onChange={(e) => {
+                const p = getPlatformPresetById(e.target.value);
+                setPresetId(p.id);
+                if (p.id !== 'generic') {
+                  setUrl(p.defaultUrl);
+                }
+                setThrottleMs(p.defaultThrottleMs);
+                log('info', `已切换至 ${p.name} 预设（建议操作间隔 ${p.defaultThrottleMs}ms）`);
+              }}
+            >
+              {PLATFORM_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <p className="hint" style={{ marginTop: 4 }}>
+              {getPlatformPresetById(presetId).notes}
+            </p>
+          </div>
+
           <div className="field" style={{ gridColumn: 'span 2' }}>
             <label>阅卷平台网址</label>
             <div className="row">
@@ -478,7 +545,12 @@ export function BrowserPanel(): JSX.Element {
       </div>
 
       <div className="card">
-        <h2>评分标准</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2>评分标准</h2>
+          <button className="btn btn-secondary" onClick={handleExtractRubric} disabled={busy}>
+            📸 截图一键提取细则
+          </button>
+        </div>
         <div className="field">
           <label>题目</label>
           <textarea value={stem} placeholder="题干原文" onChange={(e) => setStem(e.target.value)} />

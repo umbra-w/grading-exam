@@ -232,3 +232,28 @@ export function promptStamp(): { version: string; hash: string; lowConfidenceThr
     lowConfidenceThreshold: LOW_CONFIDENCE_THRESHOLD,
   };
 }
+
+/* --------------------------------------------- 细则提取（Phase B3） */
+
+export const EXTRACT_RUBRIC_SCHEMA = `{
+  "stem": "题目题干文本或设问",
+  "questionType": "choice" | "judge" | "fill" | "short" | "calc" | "essay",
+  "fullScore": 10,
+  "referenceAnswer": "标准参考答案",
+  "scoringPoints": ["得分点1（X分）", "得分点2（X分）"]
+}`;
+
+export function buildExtractRubricPrompt(subject?: string): string {
+  return `这是一张教师阅卷的题目评分标准/参考答案截图。
+请识别其中的题目内容、题型、分值、标准答案以及评分得分点细则，并整理成规范的 JSON。
+
+要求：
+1. "stem": 识别出的题干内容或设问。
+2. "questionType": 题型推断（choice/judge/fill/short/calc/essay）。
+3. "fullScore": 题目满分数值（如 10）。若图中未标明，默认填 10。
+4. "referenceAnswer": 参考答案或标准解法。
+5. "scoringPoints": 字符串数组，列出具体的步骤得分点与给分细则。
+
+${subject ? `已知学科：${subject}\n` : ''}只输出合法的 JSON，不要输出任何多余解释：
+${EXTRACT_RUBRIC_SCHEMA}`;
+}

@@ -557,7 +557,15 @@ export interface PaperReport {
 /* ------------------------------------------------------- 浏览器自动化 */
 
 export type BrowserKernel = 'chrome' | 'edge';
-export type GradingMode = 'top' | 'steady' | 'standard';
+export type GradingMode = 'top' | 'steady' | 'standard' | 'trial';
+
+export interface ExtractedRubric {
+  stem: string;
+  questionType: QuestionType;
+  fullScore: number;
+  referenceAnswer: string;
+  scoringPoints: string[];
+}
 
 export interface AutoGradeConfig {
   pageUrl: string;
@@ -662,6 +670,16 @@ export interface IPC {
     rawText: string;
     subject?: string;
   }) => AICallResult;
+  /** Phase B3: 截图一键提取评分细则（OCR / VLM 结构化得分点） */
+  'ai:extractRubric': (payload: {
+    image: ImagePart;
+    subject?: string;
+  }) => {
+    ok: boolean;
+    rubric?: ExtractedRubric;
+    rawText?: string;
+    error?: string;
+  };
   'ai:visionAnswers': (payload: {
     images: ImagePart[];
     questionCount: number;

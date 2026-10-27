@@ -233,11 +233,13 @@ describe('模式能力：谁能填分、谁能提交', () => {
   it('★ standard 不填分；只有 top 能提交', () => {
     expect(modeFills('standard')).toBe(false);
     expect(modeFills('steady')).toBe(true);
+    expect(modeFills('trial')).toBe(true);
     expect(modeFills('top')).toBe(true);
 
     // 这条矩阵就是安全不变量的定义。改它就等于改产品承诺
     expect(modeSubmits('standard')).toBe(false);
     expect(modeSubmits('steady')).toBe(false);
+    expect(modeSubmits('trial')).toBe(false);
     expect(modeSubmits('top')).toBe(true);
   });
 });

@@ -15,8 +15,10 @@ import type {
   AICallResult,
   AIConfig,
   ChatMessage,
+  ExtractedRubric,
   GradeResult,
   ImagePart,
+  QuestionType,
   TokenUsage,
 } from '../../shared/types';
 import {
@@ -38,6 +40,7 @@ import {
   buildParsePaperPrompt,
   buildPingPrompt,
   buildVisionAnswersPrompt,
+  buildExtractRubricPrompt,
   type GradePromptInput,
 } from './prompts';
 
@@ -629,6 +632,52 @@ export async function visionAnswers(
 }
 
 /** 生成本次运行 id，用于审计留痕与失败案例库关联 */
+
+/** 截图提取评分细则（Phase B3） */
+export async function extractRubric(
+  cfg: AIConfig,
+  image: ImagePart,
+  subject?: string,
+): Promise<{ ok: boolean; rubric?: ExtractedRubric; rawText?: string; usage: TokenUsage; error?: string }> {
+  const prompt = buildExtractRubricPrompt(subject);
+  const messages: ChatMessage[] = [
+    { role: 'user', content: prompt, images: [image] },
+  ];
+  const call = await callAI(cfg, messages, { json: true });
+  if (!call.ok) {
+    return { ok: false, rawText: call.text, usage: call.usage, error: call.diag.rawSnippet ?? '调用失败' };
+  }
+
+  const parsed = parseJsonLoose(call.text);
+  if (!parsed || typeof parsed.value !== 'object' || parsed.value === null) {
+    return { ok: false, rawText: call.text, usage: call.usage, error: '未能从模型响应解析出结构化 JSON' };
+  }
+
+  const val = parsed.value as Record<string, unknown>;
+  const stem = typeof val.stem === 'string' ? val.stem : '';
+  const questionType = (['choice', 'judge', 'fill', 'short', 'calc', 'essay'].includes(String(val.questionType))
+    ? val.questionType
+    : 'short') as QuestionType;
+  const fullScore = typeof val.fullScore === 'number' && val.fullScore > 0 ? val.fullScore : 10;
+  const referenceAnswer = typeof val.referenceAnswer === 'string' ? val.referenceAnswer : '';
+  const scoringPoints = Array.isArray(val.scoringPoints)
+    ? val.scoringPoints.map((pt) => String(pt).trim()).filter(Boolean)
+    : [];
+
+  return {
+    ok: true,
+    rubric: {
+      stem,
+      questionType,
+      fullScore,
+      referenceAnswer,
+      scoringPoints,
+    },
+    rawText: call.text,
+    usage: call.usage,
+  };
+}
+
 export function newRunId(): string {
   return randomUUID();
 }
