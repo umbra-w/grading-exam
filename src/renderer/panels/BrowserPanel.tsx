@@ -25,25 +25,23 @@ const MODES: Array<{ key: GradingMode; name: string; desc: string; warn?: string
   {
     key: 'steady',
     name: '稳健模式',
-    desc: '填分前停下来等你确认；软件不会替你提交，提交由你手动完成。默认推荐。',
+    desc: '填分与提交前都停下来等你确认。默认推荐。',
   },
   {
     key: 'top',
     name: '顶尖模式',
-    desc: '截图→评分→填分→真的按下平台的提交按钮，全程无人值守。',
-    warn: '会真实提交',
+    desc: '截图→评分→填分→提交，全程无人值守。',
+    warn: '慎用',
   },
 ];
 
 /**
  * 浏览器自动化阅卷面板。
  *
- * 接线说明：主进程的 browser:* / picker:* / page:* / auto:* 通道
- * **都已实现**（auto:* 的执行层在 page/auto-runner.ts）。
- *
- * ⚠ 但 auto:* 依赖真实 CDP，**本机无法验证**（Electron 起不来，§5）。
- * 所以面板必须把"未在真机验证过"说清楚，而不是让它看起来像
- * "已经可用的无人值守阅卷"——那是本项目最不能犯的错（§1.2）。
+ * 本轮接线说明：主进程的 browser:* / picker:* / page:* 通道**已经实现**，
+ * 但界面此前仍写着「Phase 2 未实现」且按钮全部 disabled —— 界面在说谎。
+ * 现已接上真实通道；仍未实现的只有自动连续阅卷（auto:*），
+ * 该按钮保持禁用并明确说明，不假装可用。
  */
 export function BrowserPanel(): JSX.Element {
   const pushLog = useStore((s) => s.appendLog);
@@ -55,18 +53,11 @@ export function BrowserPanel(): JSX.Element {
   const [fullScore, setFullScore] = useState(10);
   const [reference, setReference] = useState('');
   const [points, setPoints] = useState('');
-  // 下面三项是 auto:start 必需的，原先面板没有，导致配置组装不出来
-  const [maxPapers, setMaxPapers] = useState(0);
-  const [throttleMs, setThrottleMs] = useState(800);
-  const [nextPaperTimeoutSec, setNextPaperTimeoutSec] = useState(60);
 
   const [opened, setOpened] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 当前正在等待用户去页面上点击的那一项；null = 不在拾取中 */
   const [picking, setPicking] = useState<PickKind | null>(null);
-  const [autoRunning, setAutoRunning] = useState(false);
-  const [autoCurrent, setAutoCurrent] = useState('');
-  const [autoHandled, setAutoHandled] = useState(0);
   const [picked, setPicked] = useState<Partial<Record<PickKind, PickResult>>>({});
   const [coordinateMode, setCoordinateMode] = useState(false);
   /** 坐标模式下手输的屏幕坐标（Canvas 平台没有 DOM 可拾取） */
@@ -122,25 +113,9 @@ export function BrowserPanel(): JSX.Element {
       setPicking(null);
       log('warn', '阅卷窗口已被关闭');
     });
-    /*
-     * 订阅连续阅卷进度。
-     *
-     * 此前这个订阅不存在，而 `evt:progress` 又被登记为"依赖 Phase 5 未实现" ——
-     * 现在执行层接通了，必须真的收下来，否则面板无法反映运行状态，
-     * 老师会以为"点了开始没反应"。
-     * 同样必须取消订阅（StrictMode 挂载两次会收双份）。
-     */
-    const offProgress = window.gradingExam.onProgress((raw) => {
-      const p = raw as { running?: boolean; handled?: number; current?: string } | null;
-      if (!p) return;
-      setAutoRunning(Boolean(p.running));
-      setAutoHandled(typeof p.handled === 'number' ? p.handled : 0);
-      setAutoCurrent(typeof p.current === 'string' ? p.current : '');
-    });
     return () => {
       off();
       offClosed();
-      offProgress();
     };
   }, [pushLog]);
 
@@ -238,84 +213,8 @@ export function BrowserPanel(): JSX.Element {
     log('warn', `检测到页面结构变化：${detail}。请重新拾取相关元素。${res.action ? `（建议：${res.action}）` : ''}`);
   }
 
-  /**
-   * 开工前校验：缺什么就**明确指出缺什么**。
-   *
-   * 为什么不把校验放主进程：这里能直接说"请先拾取分数输入框"，
-   * 而主进程只能返回一个错误码。校验规则（哪种模式需要哪些拾取项）
-   * 与主进程的 `missingPicks()` 一致——那边是执行层的最后一道门，
-   * 这边只是提前反馈，两边都要有（缺了任何一边都会出现
-   * "点了没反应"或"启动了才报错"）。
-   */
-  function missingForStart(): string[] {
-    const missing: string[] = [];
-    if (!stem.trim()) missing.push('题干');
-    if (!(fullScore > 0)) missing.push('满分');
-    if (!picked.questionRegion) missing.push('题目区域（用于截图评分）');
-    if (mode !== 'standard' && !picked.scoreInput) missing.push('分数输入框');
-    if (mode === 'top' && !picked.submitButton) missing.push('提交按钮（无人值守模式必须拾取）');
-    return missing;
-  }
-
-  async function startAuto(): Promise<void> {
-    if (!opened) {
-      log('warn', '请先打开阅卷窗口再开始连续阅卷');
-      return;
-    }
-    const missing = missingForStart();
-    if (missing.length > 0) {
-      log('warn', `还缺：${missing.join('、')}。补齐后再启动。`);
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await window.gradingExam.autoStart({
-        pageUrl: url.trim(),
-        kernel,
-        mode,
-        // 卷子标识由执行层从页面读取（URL + 分数框初值指纹），
-        // 这里给的是**题目**标识，两者不是一回事
-        questionId: stem.trim().slice(0, 40),
-        question: {
-          stem: stem.trim(),
-          fullScore,
-          referenceAnswer: reference.trim(),
-          scoringPoints: points
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean),
-        },
-        picks: picked,
-        throttleMs,
-        maxPapers,
-        nextPaperTimeoutMs: Math.max(1, nextPaperTimeoutSec) * 1000,
-      });
-      if (!res.ok) {
-        log('error', `启动失败：${res.error ?? '未知原因'}`);
-        return;
-      }
-      setAutoRunning(true);
-      setAutoHandled(0);
-      log('ok', '连续阅卷已启动。单份失败只告警不中断。');
-      if (mode === 'top') {
-        log('warn', '无人值守模式会自动提交。请留意平台上的实际结果，事后抽检。');
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function stopAuto(): Promise<void> {
-    const res = await window.gradingExam.autoStop();
-    // 主进程会说"当前没有正在运行的连续阅卷"；这里如实跟随，
-    // 不因为本地以为是运行中就假装停掉了
-    log(res.ok ? 'info' : 'warn', res.ok ? '已请求停止连续阅卷' : '当前没有正在运行的连续阅卷');
-    if (res.ok) setAutoRunning(false);
-  }
-
-  async function confirmAuto(): Promise<void> {
-    const res = await window.gradingExam.autoConfirm();
-    log(res.ok ? 'ok' : 'warn', res.ok ? '已确认本份评分' : '当前没有等待确认的评分');
+  function notImplemented(action: string): void {
+    log('warn', `${action}：连续阅卷状态机（Phase 5）尚未接入，此按钮暂不可用`);
   }
 
   return (
@@ -525,71 +424,19 @@ export function BrowserPanel(): JSX.Element {
           ))}
         </div>
 
-        <div className="grid3" style={{ marginTop: 12 }}>
-          <div className="field">
-            <label>连续处理份数上限</label>
-            <input
-              type="number"
-              min={0}
-              value={maxPapers}
-              onChange={(e) => setMaxPapers(Math.max(0, Number(e.target.value) || 0))}
-            />
-            <p className="hint" style={{ marginBottom: 0 }}>0 = 不限，直到等不到下一份为止。</p>
-          </div>
-          <div className="field">
-            <label>每步操作间隔（毫秒）</label>
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={throttleMs}
-              onChange={(e) => setThrottleMs(Math.max(0, Number(e.target.value) || 0))}
-            />
-            <p className="hint" style={{ marginBottom: 0 }}>适当间隔可降低被平台判为机器人的概率。</p>
-          </div>
-          <div className="field">
-            <label>下一份等待超时（秒）</label>
-            <input
-              type="number"
-              min={1}
-              value={nextPaperTimeoutSec}
-              onChange={(e) => setNextPaperTimeoutSec(Math.max(1, Number(e.target.value) || 1))}
-            />
-            <p className="hint" style={{ marginBottom: 0 }}>超时按"批完了"处理，并会如实说明是等超时结束的。</p>
-          </div>
-        </div>
-
-        <div className="row" style={{ marginTop: 12 }}>
-          <button
-            className="primary"
-            disabled={!opened || autoRunning || busy}
-            onClick={() => void startAuto()}
-          >
-            {autoRunning ? '运行中…' : '开始连续阅卷'}
+        <div className="row">
+          <button className="primary" disabled onClick={() => notImplemented('自动运行')}>
+            开始连续阅卷
           </button>
-          <button className="danger" disabled={!autoRunning} onClick={() => void stopAuto()}>
+          <button className="danger" disabled onClick={() => notImplemented('停止')}>
             停止
           </button>
-          <button disabled={!autoRunning} onClick={() => void confirmAuto()}>
-            确认本份
-          </button>
           <span className="spacer" />
-          <span className={`badge ${autoRunning ? 'green' : 'gray'}`}>
-            {autoRunning ? `运行中 ${autoHandled} 份` : '未运行'}
-          </span>
+          <span className="badge gray">Phase 5 未接入</span>
         </div>
-
-        {autoRunning ? (
-          <div className="notice info" style={{ marginTop: 10 }}>
-            当前：{autoCurrent || '…'}
-          </div>
-        ) : null}
-
         <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-          单份失败只告警不中断（拾取配置缺失除外——那会整轮中止）。
-          steady 模式不会自动提交，提交由你手动完成；
-          top 模式会真的按下提交按钮。
-          <b> 自动提交依赖真实阅卷平台，本机无法验证，请先小份数试跑并抽检平台结果。</b>
+          连续阅卷中单份失败只告警不中断；0 分卷跳过填分直接提交。
+          该状态机尚未接入，按钮保持禁用而不是假装可用。
         </p>
       </div>
     </>

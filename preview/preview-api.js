@@ -237,16 +237,6 @@ window.gradingExam = {
   // 真实实现里这个分支**不给分且要求人工确认**，界面必须能看到它，
   // 否则这个最容易被忽略的分支就永远没被人看过。
   compareObjective: async () => ({
-  /*
-   * 连续阅卷（Phase 5）。预览里这三个方法**只做假响应**：
-   *   · auto:start 返回 ok:true，让面板切到"运行中"的样子
-   *   · auto:stop / auto:confirm 返回 ok:true
-   * 注意：预览**不模拟 evt:progress 推送**，所以"运行中 N 份"
-   * 在预览里会停在 0 份——这是刻意留白，不假装预览能演示进度。
-   */
-  autoStart: async () => ({ ok: true }),
-  autoStop: async () => ({ ok: true }),
-  autoConfirm: async () => ({ ok: true }),
     verdict: 'suspect',
     awarded: false,
     normalized: '碳酸钙的摩尔质量',

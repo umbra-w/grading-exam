@@ -210,38 +210,6 @@ const ERROR_RULES: Array<{
       action: '按 SPEC P2-8 降级为警告并继续，不中断连续阅卷；同时记录该平台/该题型。',
     },
   },
-  /*
-   * 下面两条是补上的缺口，不是"顺手加的规则"。
-   *
-   * 实测发现 `AutoErrorKind` 声明了 11 个 kind，而本表只覆盖 8 个：
-   * `classifyError('VALUE_UNREADABLE: x')` 与
-   * `classifyError('ELEMENT_NOT_FOUND: x')` 都**静默返回 UNKNOWN**。
-   *
-   * 这两条不能省，因为它们的处置与 VALUE_MISMATCH 完全不同：
-   *  - VALUE_UNREADABLE = 回读不到值（元素被重渲染替换）或写入未生效
-   *    （受控组件没收到受信任输入事件）。**先怀疑拾取元素失效**，
-   *    要重新拾取，而不是去调归一化。
-   *  - ELEMENT_NOT_FOUND = 目标元素本身消失了（平台改版/条件渲染）。
-   *    要先确认页面是否已刷新，必要时整轮中止。
-   * 压成 UNKNOWN 后处置建议只剩"请附日志排查"，等于没有建议。
-   *
-   * ⚠ 顺序：VALUE_UNREADABLE 必须排在它自己的匹配之前不被别的规则抢走；
-   * 这几条都带 `/i` 且关键词互不重叠，故顺序不敏感，但仍放在一起便于核对。
-   */
-  {
-    match: /VALUE_UNREADABLE|回读不到|写入未生效/i,
-    result: {
-      kind: 'VALUE_UNREADABLE', fatal: false, retryable: true,
-      action: '回读不到值或写入未生效。先怀疑拾取元素已被重渲染替换：重新拾取该输入框；若反复出现，检查是否用了受信任输入（Input.insertText）。',
-    },
-  },
-  {
-    match: /ELEMENT_NOT_FOUND|元素.*(不存在|消失|移除)|找不到.*元素/i,
-    result: {
-      kind: 'ELEMENT_NOT_FOUND', fatal: false, retryable: true,
-      action: '目标元素不存在或已被移除。确认页面是否已跳转/改版；同一坐标连续多次失败应重新拾取。',
-    },
-  },
   {
     match: /OUT_OF_VIEWPORT/i,
     result: {

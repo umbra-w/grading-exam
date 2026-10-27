@@ -40,7 +40,6 @@ import {
   visionAnswers,
 } from './ai/client';
 import { PlatformBrowser } from './page/browser';
-  import { AutoRunner } from './page/auto-runner';
 import { parseFile, toIpcResult } from './io/parse';
 import { exportExcel, exportMarkdown } from './io/export';
 import { compareObjective } from '../shared/objective';
@@ -429,115 +428,13 @@ function registerIpc(): void {
   // Phase 2：阅卷窗口与拾取通道已实现（page/browser.ts + page/picker.ts）。
   registerBrowserHandlers();
 
-  // Phase 5：连续阅卷的执行层。
-  // 判定逻辑已在纯模块里单测（auto-orchestrator 28 项 / autoloop 37 项 /
-  // geometry 66 项）；这里只做"装配"，但**依赖真实 CDP，本机无法验证**。
-  registerAutoHandlers();
-}
-
-/**
- * 注册连续阅卷的执行层通道（Phase 5）。
- *
- * ⚠ 验证状态：装配逻辑本机可编译、可对账，但**跑不到真机验证**——
- * 它与 `browser.ts`/`cdp.ts` 一样依赖真实 BrowserWindow（BLOCKERS.md B3）。
- * 因此这里的诚实纪律是：
- *   · 任何前置条件不满足（窗口没开、被拒绝、已有运行中）就**明确报错**，
- *     不假装跑起来了
- *   · 不用假数据兜底，不用"看起来像是在跑"的进度
- *   · 审计与拒绝的记录都会写日志，方便真机调试时回溯
- */
-let autoRunner: AutoRunner | null = null;
-
-function registerAutoHandlers(): void {
-  ipcMain.handle('auto:start', async (_e, cfg: AutoGradeConfig) => {
-    if (!cfg || typeof cfg !== 'object') {
-      pushLog('warn', 'auto:start 参数不合法，已拒绝。');
-      return { ok: false, error: '参数不合法' };
-    }
-    if (!platform?.isOpen()) {
-      pushLog('warn', '连续阅卷启动失败：阅卷窗口未打开。');
-      return { ok: false, error: '请先打开阅卷窗口' };
-    }
-    if (autoRunner?.isRunning()) {
-      pushLog('warn', '连续阅卷已在运行中，本次启动被忽略。');
-      return { ok: false, error: '已在运行中' };
-    }
-
-    /*
-     * 开工前查一次漂移：平台改版后坐标全部失效，若不做这一步，
-     * 失败会表现为"点击没反应"，而原因看起来像"平台卡了"，
-     * 排查方向被带偏。
-     *
-     * `checkDrift()` 返回 `DriftReport | null`，null 表示**无从判断**
-     *（没拾取过 / 拿不到当前指纹）。此时刻意**不拦**启动，但必须
-     * 把"这次没做漂移检查"说清楚——静默通过会让人以为检查过了。
-     */
-    const drift = await platform.checkDrift();
-    if (drift === null) {
-      pushLog('info', '本次未做页面结构漂移检查（无历史指纹可比对），运行中若点击无效应优先怀疑平台改版。');
-    } else if (drift.changed) {
-      const detail = drift.details?.join('；') ?? '页面结构与拾取时不一致';
-      pushLog('warn', `连续阅卷未启动：${detail}`);
-      if (drift.action) pushLog('info', drift.action);
-      return { ok: false, error: '页面结构已变化，请重新拾取后再启动' };
-    }
-
-    const settings = loadSettings();
-    const runner = new AutoRunner(
-      platform,
-      cfg,
-      {
-        log: (level, msg) => pushLog(level, msg),
-        progress: (p) => {
-          mainWindow?.webContents.send('evt:progress', {
-            running: p.running,
-            handled: p.handled,
-            current: p.current,
-            lastScore: p.lastScore ?? 0,
-          });
-        },
-        awaitConfirm: (payload) => mainWindow?.webContents.send('evt:awaitConfirm', payload),
-        finished: (outcome) => {
-          pushLog(
-            outcome.kind === 'error' ? 'error' : 'ok',
-            `连续阅卷结束：${outcome.kind}，处理 ${outcome.handled} 份，提交 ${outcome.submitted} 份。`,
-          );
-          if (outcome.kind === 'error') {
-            pushLog('warn', `结束原因：${outcome.error ?? '未知'}`);
-          }
-          autoRunner = null;
-        },
-      },
-      settings.ai,
-    );
-    autoRunner = runner;
-
-    pushLog(
-      'info',
-      `连续阅卷启动：${cfg.mode === 'top' ? '无人值守（自动填分+自动提交）' : cfg.mode === 'steady' ? '稳健（逐份确认，不自动提交）' : '仅评分（不填分）'}模式。`,
-    );
-    // 刻意不 await：一轮可能跑几十分钟，阻塞 IPC 会让整个界面卡死
-    void runner.run();
-    return { ok: true };
-  });
-
-  ipcMain.handle('auto:stop', () => {
-    if (!autoRunner) {
-      // 没有在跑却说"已停止"会让老师以为停掉了某个正在跑的任务
-      pushLog('info', '当前没有正在运行的连续阅卷。');
-      return { ok: false };
-    }
-    autoRunner.stop();
-    return { ok: true };
-  });
-
-  ipcMain.handle('auto:confirm', () => {
-    if (!autoRunner) {
-      pushLog('warn', '当前没有正在运行的连续阅卷，确认被忽略。');
-      return { ok: false };
-    }
-    return { ok: autoRunner.confirm() };
-  });
+  // auto:*（连续阅卷状态机）仍未实现，明确报未实现而不是静默返回假数据
+  for (const channel of ['auto:start', 'auto:stop', 'auto:confirm'] as const) {
+    ipcMain.handle(channel, () => {
+      pushLog('warn', `${channel} 尚未实现（Phase 5：连续阅卷状态机）`);
+      return { ok: false, error: 'Phase 5 未实现' };
+    });
+  }
 }
 
 /**
