@@ -130,11 +130,37 @@ export function buildMarkdown(report: PaperReport): string {
   lines.push('| 指标 | 值 |');
   lines.push('|---|---|');
   lines.push(`| 参考人数 | ${st.count} |`);
-  lines.push(`| 平均分 | ${st.average.toFixed(2)} |`);
-  lines.push(`| 最高分 | ${st.max} |`);
-  lines.push(`| 最低分 | ${st.min} |`);
-  lines.push(`| 及格率 | ${(st.passRate * 100).toFixed(1)}% |`);
+  lines.push(`| 平均分 | ${fmtNum(st.average, 2)} |`);
+  lines.push(`| 最高分 | ${fmtNum(st.max, 0)} |`);
+  lines.push(`| 最低分 | ${fmtNum(st.min, 0)} |`);
+  lines.push(`| 及格率 | ${fmtPct(st.passRate)} |`);
   lines.push('');
+
+  // ★ 数据问题必须写进导出文件本身。
+  // 只在界面上警告是不够的：这份 Markdown 会被转发、存档、当作依据，
+  // 而读它的人看不到任何界面提示。数字有没有问题，必须随数字一起走。
+  const warnings = statsWarnings(st);
+  if (warnings.length > 0) {
+    lines.push('> ⚠️ **本报告的数据存在问题，下列数字仅供参考：**');
+    lines.push('>');
+    for (const w of warnings) lines.push(`> - ${w}`);
+    lines.push('');
+  }
+
+  if (st.byType.length > 0) {
+    lines.push('## 分层统计（按题型）');
+    lines.push('');
+    lines.push('> 客观题是确定性比对，主观题是统计一致性，两类**不合并**为一个准确率。');
+    lines.push('');
+    lines.push('| 题型 | 题次数 | 平均得分率 | 需复核率 |');
+    lines.push('|---|---|---|---|');
+    for (const t of st.byType) {
+      lines.push(
+        `| ${typeLabel(t.type)} | ${t.count} | ${fmtPct(t.avgScoreRate)} | ${fmtPct(t.reviewRate)} |`,
+      );
+    }
+    lines.push('');
+  }
 
   if (st.distribution.length > 0) {
     lines.push('## 分数分布');
@@ -182,6 +208,39 @@ export function buildMarkdown(report: PaperReport): string {
 /** 需要人工复核的学生（用于导出时提示） */
 export function lowConfidenceStudents(report: PaperReport, threshold = 0.75): StudentResult[] {
   return report.results.filter((s) => s.details.some((d) => d.confidence < threshold));
+}
+
+/* ---------------------------------------------------- 空值与数据问题的呈现 */
+
+/** 数字：null → 「—」。**不要**用 0 代替 —— 那会被读成"真的是 0"（§6.1） */
+export function fmtNum(v: number | null, digits: number): string {
+  return v === null || !Number.isFinite(v) ? '—' : v.toFixed(digits);
+}
+
+/** 比例：null → 「—」；0 仍然显示 0.0%（那是一个真实的值） */
+export function fmtPct(v: number | null): string {
+  return v === null || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(1)}%`;
+}
+
+/**
+ * 把统计里的数据问题翻译成人能看懂的一句话。
+ *
+ * 为什么必须随数字一起出现而不是只在界面弹窗：导出的文件会被转发和存档，
+ * 读它的人看不到界面。数字有没有问题，必须跟着数字走。
+ */
+export function statsWarnings(st: PaperReport['stats']): string[] {
+  const out: string[] = [];
+  if (st.count === 0) out.push('还没有任何答卷，所有统计指标为空。');
+  if (!st.numberValid) {
+    out.push('存在总分超出 [0, 满分] 的答卷（可能漏改或重复计分），平均值不可信。');
+  }
+  if (st.mixedFullScore) {
+    out.push(`本次答卷的满分不一致，统计以满分 ${st.fullTotal} 为基准，混合满分的汇总仅供参考。`);
+  }
+  if (st.count > 0 && st.passRate === null) {
+    out.push('没有可用的满分信息，无法计算及格率。');
+  }
+  return out;
 }
 
 /* ---------------------------------------------------------- 薄绑定层 */
@@ -252,12 +311,46 @@ export async function exportExcel(report: PaperReport, outPath: string): Promise
   for (const [k, v] of [
     ['试卷', report.paperTitle],
     ['参考人数', st.count],
-    ['平均分', Number(st.average.toFixed(2))],
-    ['最高分', st.max],
-    ['最低分', st.min],
-    ['及格率', `${(st.passRate * 100).toFixed(1)}%`],
+    // null → 「—」：写成 0 会被 Excel 读成真实数字并参与后续计算
+    ['平均分', st.average === null ? '—' : Number(st.average.toFixed(2))],
+    ['最高分', st.max === null ? '—' : st.max],
+    ['最低分', st.min === null ? '—' : st.min],
+    ['及格率', st.passRate === null ? '—' : `${(st.passRate * 100).toFixed(1)}%`],
+    ['满分基准', st.fullTotal > 0 ? st.fullTotal : '—'],
   ] as Array<[string, string | number]>) {
     ws2.addRow({ k, v });
+  }
+
+  // 数据问题写进「班级总览」底部，随文件一起走
+  const warns = statsWarnings(st);
+  if (warns.length > 0) {
+    ws2.addRow({});
+    const title = ws2.addRow({ k: '⚠️ 数据问题', v: '' });
+    title.font = { bold: true, color: { argb: 'FF991B1B' } };
+    for (const w of warns) {
+      const r = ws2.addRow({ k: '', v: w });
+      r.getCell(2).font = { color: { argb: 'FF991B1B' } };
+    }
+  }
+
+  // Sheet 3：分层统计（F3.6）—— 客观题与主观题分开看，不合并成一个准确率
+  if (st.byType.length > 0) {
+    const ws3 = wb.addWorksheet('分层统计');
+    ws3.columns = [
+      { header: '题型', key: 't', width: 12 },
+      { header: '题次数', key: 'c', width: 10 },
+      { header: '平均得分率', key: 'r', width: 14 },
+      { header: '需复核率', key: 'v', width: 14 },
+    ];
+    ws3.getRow(1).font = { bold: true };
+    for (const t of st.byType) {
+      ws3.addRow({
+        t: typeLabel(t.type),
+        c: t.count,
+        r: fmtPct(t.avgScoreRate),
+        v: fmtPct(t.reviewRate),
+      });
+    }
   }
 
   await wb.xlsx.writeFile(outPath);

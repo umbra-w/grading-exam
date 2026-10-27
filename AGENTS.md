@@ -77,12 +77,24 @@ pnpm eval:selftest        # 评测流水线自测
 pnpm validate:dataset     # 数据集契约校验
 pnpm freeze:verify        # 契约冻结校验
 pnpm ipc:check            # IPC 契约对账（命令 + 事件 + 订阅 + 是否真发送）
+pnpm tree:check           # 校验本文件 §4 的结构树前缀自洽（├/└ 与层级）
+pnpm check:doc-counts     # 校验文档里声称的用例/套件计数与 vitest 真实输出一致
+pnpm icon                 # 生成并校验应用图标（像素级检查，不靠肉眼）
+pnpm check:package        # 校验生产包内容（需先 electron-builder --dir）
+pnpm probe:package        # ★ 证明上面那个校验器真的会红（注入 3 类故障）
+pnpm check:portable       # 校验便携版数据目录决策链路（6 种环境变量组合）
+pnpm verify:artifacts     # 校验打包产物（产品名/版权/图标嵌入/签名；并断言无安装程序）
 pnpm verify:all           # 上面这些 + typecheck + test 一条龙
 pnpm fixtures             # 起夹具静态服务 127.0.0.1:8000
 
 # 界面验证（Electron 起不来时的替代路径）
 pnpm ui:verify            # 打包→起服务→逐面板截图→断言→对比度+像素统计+样式类存在性
 ```
+
+> 上面三个打包相关的检查（`check:package` / `probe:package` / `verify:artifacts`）
+> 在**产物不存在时返回 3（不适用）而不是 1（失败）**。打包产物不入库，
+> 新机器上必然找不到 —— 报失败会让每个协作者看到一条"先去打包"才能消掉的
+> 假红灯，久而久之就被跳过了（§7.3：被跳过的检查等于不存在）。
 
 ### 3.1 Python 必须带的两个环境变量
 
@@ -99,6 +111,7 @@ $env:PYTHONUTF8=1                # 防止中文输出触发 GBK UnicodeEncodeErr
 src/
 ├─ shared/            ★ 渲染层与主进程共用，唯一真源
 │  ├─ types.ts          全部 IPC 契约 + 领域类型（改通道先改这里）
+│  ├─ blank-paper.ts    空白卷判定（照片导入路径，两侧共用同一阈值）
 │  ├─ locator.ts        抗改版选择器候选生成（Playwright 官方优先级）
 │  └─ selector.ts       CSS 兜底选择器 + 结构指纹
 ├─ main/
@@ -110,7 +123,7 @@ src/
 │  │  ├─ ensemble.ts     ★ 多次运行分歧度（自一致性）
 │  │  ├─ review.ts       ★ 复核队列判定与人工修正（纯逻辑）
 │  │  └─ prompts.ts        提示词模板 + 版本指纹
-│  └─ page/
+│  ├─ page/
 │     ├─ browser.ts        阅卷窗口生命周期（⚠ 未在真机验证）
 │     ├─ cdp.ts            底层 CDP：click / insertText / eval（⚠ 未在真机验证）
 │     ├─ geometry.ts     ★ 坐标换算、错误分类、提交状态机（纯逻辑）
@@ -118,11 +131,20 @@ src/
 │     ├─ auto-orchestrator.ts ★ 连续阅卷的状态机与安全不变量（纯逻辑）
 │     ├─ auto-runner.ts    把上面那个状态机的动作翻译成 CDP 调用（⚠ 未在真机验证）
 │     ├─ quality.ts      ★ 图片质量闸门 + 闸门→评分结果的映射（纯逻辑）
-│     └─ picker.ts         拾取结果组装、漂移检测（纯逻辑）
+│     ├─ picker.ts         拾取结果组装、漂移检测（纯逻辑）
+│  ├─ io/
+│     ├─ parse.ts        试卷/答题卡解析（纯函数 + 薄绑定读文件）
+│     ├─ images.ts     ★ 答卷图片读取（F3.4：路径 → data URL，mime 映射可测）
+│     ├─ export.ts     ★ Excel / Markdown 报告生成（纯函数构造 + 薄绑定写盘）
+│     └─ paper.ts      ★ 整卷聚合：逐题结果 → PaperReport 统计（纯逻辑）
 ├─ preload/
 │  ├─ index.ts           contextBridge API（泛型派发器，见 §4.2）
 │  └─ viewer.ts          注入阅卷页：拾取上报 + 视觉反馈
-└─ renderer/            React 面板 + styles.css
+├─ renderer/            React 面板 + styles.css
+│  ├─ paper-entry.ts    ★ 整卷成绩录入：粘贴文本 → 解析 → StudentResult（纯逻辑）
+│  ├─ answer-import.ts  ★ F3.4 批量图片导入纯逻辑：题号规范化/对齐/去重/草稿
+│  ├─ gray-stats.ts     ★ 灰度统计（statsFromImageData 纯函数可测；解码薄绑定 ⚠）
+│  └─ analysis.ts       ★ 学情解读：统计 → 教学建议（每条强制带数据依据）
 ```
 
 ### 4.1 IPC 契约只有一处真源
@@ -154,8 +176,10 @@ src/
 ### 4.4 纯逻辑与薄绑定分离（必须遵守）
 
 `geometry.ts` / `picker.ts` / `locator.ts` / `ensemble.ts` / `review.ts` /
-`autoloop.ts` / `auto-orchestrator.ts` / `quality.ts` / `shared/objective.ts`
-是**纯函数**，因此能被 vitest 直接覆盖。
+`autoloop.ts` / `auto-orchestrator.ts` / `quality.ts` / `shared/objective.ts` /
+`shared/blank-paper.ts` / `io/paper.ts` / `io/export.ts` /
+`renderer/paper-entry.ts` / `renderer/answer-import.ts` / `renderer/gray-stats.ts` /
+`renderer/grade-pipeline.ts` / `renderer/analysis.ts` 是**纯函数**，因此能被 vitest 直接覆盖。
 `cdp.ts` / `browser.ts` / `auto-runner.ts` 是薄绑定，无法本地验证。
 
 隔离约束由两套测试从两个方向把守（缺一不可）：
@@ -182,7 +206,7 @@ src/
 
 | 想验证什么 | 可行手段 |
 |---|---|
-| 纯逻辑正确性 | vitest（已覆盖 620 项） |
+| 纯逻辑正确性 | vitest（已覆盖 831 项） |
 | 界面布局与配色 | `pnpm ui:verify`（Edge 无头渲染，见 §5.1） |
 | 窗口/CDP/拾取行为 | **必须上真机**，本地做不到，不要假装能验 |
 
@@ -307,6 +331,7 @@ cmd.exe 按 OEM 代码页逐字节解析批处理文件，**UTF-8 中文注释�
 ```powershell
 pnpm typecheck && pnpm test && pnpm build
 pnpm metrics:selftest && pnpm eval:selftest && pnpm validate:dataset && pnpm freeze:verify
+pnpm tree:check         # 改过本文件的结构树就要跑
 pnpm ui:verify          # 动了界面才需要
 ```
 
@@ -385,6 +410,48 @@ PowerShell 里转义引号，实测每次都要写错一两轮才跑得起来。
 **规则**：任何"注入故障看是否报错"的验证，必须同时断言**注入本身生效了**。
 否则你验证的是"什么都没改变时一切正常"。
 
+#### 一个"从不生效的检查"比没有检查更危险
+
+`scripts/check_package.py` 的「排除项」检查（preview/ tests/ scripts/ 不得
+进生产包）**从头到尾没生效过**：它用 `'/'` 拼路径去匹配，而 asar 清单用的是
+`'\\'`（Windows 分隔符），于是每次都打印一个假的
+
+```
+排除项：✓ 无 preview/tests/scripts/sourcemap
+```
+
+同一个函数里的 `has()` 我修了两次（先分隔符、再前导斜杠），
+**却漏了 `count()`** —— 因为 `has()` 失败会立刻报"缺少应用文件"，
+而 `count()` 失败只会报一个看起来正常的 ✓，**不报错、不显眼**。
+
+是我写的 `scripts/probe_package.py`（注入 3 类故障看校验器是否真红）
+把它逼出来的：注入 `preview/dom-paper.html` 之后校验器**仍然 exit=0**。
+
+> 教训有两层：
+> 1. **"没找到"和"没检查"长得一模一样。** 每个 `count()==0` 的判定都要问
+>    "这是我确认它不在，还是我的匹配根本不可能命中？"
+> 2. **新写的校验器必须被注入验证过。** 这条已经写进 §6.5，但这次是
+>    校验器**其中的一个检查**静默失效 —— 只验证"整体会红"不够，
+>    要按检查项逐一注入。
+
+#### 注入的字符串必须就是断言钉住的那个（同一晚又栽一次）
+
+给 `paper` 面板加 `ui:verify` 断言后我做注入验证，结果"删掉诚实声明后
+`ui:verify` 仍然全绿"，一度怀疑验证器在说谎。**真相是我的探针无效**：
+
+| 我删的 | 断言钉的 | 结果 |
+|---|---|---|
+| 同一句话里的「不会」 | 「尚未实现」 | DOM 里「尚未实现」仍在，**绿得完全正确** |
+
+接着第二次尝试又用 `TEXT.find('尚未实现…')` 定位，命中的却是
+**JSDoc 注释里的那一处**，而不是 notice 里的那一处 ——
+注入删错了地方，靠 `assert 目标 not in 注入后文本` 才拦住。
+
+**规则**：注入验证里，"要删的字符串"与"断言钉住的字符串"必须是**同一个**，
+并且要显式断言"注入后该字符串确实消失了"。删掉同义的另一半，
+或者命中注释里的同名文本，都会让你得出"验证器坏了"这个**完全错误**的结论，
+进而去改一个本来正常的验证器。
+
 ---
 
 ## 8. 工作方式
@@ -401,7 +468,7 @@ PowerShell 里转义引号，实测每次都要写错一两轮才跑得起来。
 ```
 
 **为什么必须当场提交**：本项目的验证成本高（本机 Electron 起不来，
-只能靠 vitest + Edge 无头渲染）。一个"已通过 300 项单测"的状态是**花了几十分钟
+只能靠 vitest + Edge 无头渲染）。一个"整套单测全绿"的状态是**花了几十分钟
 挣来的**，如果只留在工作区，任何后续改动都可能把它弄脏，而重新验证的成本要再付一次。
 把它固定成提交，就等于把"已验证"这个事实**留在了可回溯的历史里**。
 
@@ -438,10 +505,13 @@ pnpm test           # 同上
 ### 8.2 测试先行（针对纯逻辑）
 
 纯逻辑模块**先写测试再写实现**。理由同 §4.4：这是唯一能在本机验证的手段。
-已覆盖 620 项（17 套件）：`review` 72 / `geometry` 66 / `ai` 60 / `picker` 54 /
-`ensemble` 51 / `locator` 45 / `objective` 39 / `autoloop` 37 / `selector` 35 /
-`auto-orchestrator` 34 / `parse` 34 / `quality` 24 / `isolation` 19 /
-`pick-protocol` 16 / `quality-yield` 15 / `zero-network` 10 / `preview-parity` 9。
+已覆盖 831 项（26 套件）：`review` 72 / `geometry` 66 / `ai` 60 / `picker` 54 /
+`ensemble` 51 / `locator` 45 / `objective` 39 / `paper` 39 / `answer-import` 39 /
+`autoloop` 37 /
+`selector` 35 / `auto-orchestrator` 34 / `parse` 34 / `paper-entry` 33 /
+`analysis` 32 / `quality` 30 / `gray-stats` 8 / `grade-pipeline` 15 / `export` 19 / `isolation` 19 / `pick-protocol` 16 /
+`quality-yield` 15 / `store-path` 14 / `zero-network` 10 / `preview-parity` 9 /
+`preload-format` 6。
 
 > 计数会随开发变动。改完测试顺手核一次真实数字，别让文档比代码慢半拍
 > —— 文档里的旧数字本身就是一种「界面在说谎」（§6.4）。
@@ -485,7 +555,8 @@ feat(界面): 简洁 + 一点点二次元；修掉四处「界面在说谎」
 | Phase 3 界面壳 | ✅ |
 | Phase 4 单题闭环 | 🟡 代码侧 ✅ / 界面侧 ✅ / 端到端 ⬜（待真机） |
 | Phase 5 连续阅卷 | 🟡 决策层 ✅（`auto-orchestrator.ts` 34 项）/ 执行层代码 ✅（`auto-runner.ts` + `auto:*` + 质量闸门）/ **真机端到端 ⬜** |
-| Phase 6~7 | ⬜ |
+| Phase 6 整卷聚合与导出 / 学情分析 | 🟢 聚合口径 ✅（`io/paper.ts` 39 项）/ 导出 ✅（`io/export.ts` 19 项）/ `paper:aggregate` 通道 ✅ / 整卷界面 ✅（`paper-entry.ts` 33 项）/ 学情分析 ✅（`analysis.ts` 32 项，每条建议强制带数据依据）/ 两面板 `ui:verify` 断言 ✅ / **批量图片识别全链路 ✅**（`answer-import.ts` 39 项 + `grade-pipeline.ts` 15 项 + `gray-stats.ts` 8 项；`io:readImages` 通道；PaperPanel 导入区与自动判分区：空白卷拦截 → 逐张识别 → 对齐去重 → 客观题本地比对（零 token）/ 主观题 AI 评分 → 成绩行回填校验；`ui:verify` 已断言且注入验证过）/ **视觉调用与 AI 评分 ⚠ 未在真机验证**（需 API Key）/ acceptable・optionText 等价答案入口未接（objective.ts 已支持，UI 无入口，已在测试注明） |
+| Phase 7 打包 | 🟢 **免安装便携版** ✅（`pnpm dist` 实测产出单文件便携版 exe 109 MB + 免安装 zip 171 MB；按要求**移除 NSIS 安装程序**，并在校验里反向断言产物中不得出现安装包）/ 生产包内容 ✅（应用文件与 4 个运行时依赖齐全、preview/tests 未混入）/ 便携数据目录 ✅（`PORTABLE_EXECUTABLE_DIR` → 数据落 exe 旁；14 项单测 + `scripts/check_portable_path.ts` 覆盖 6 种环境变量组合）/ 图标 ✅（像素级校验）/ LICENSE+README ✅ / **双击启动 🟡 待复核**（"一闪而过"真因已定位并修复：preload CJS 产物被 `type:module` 当 ESM 解析，`.cjs` 修复 + 启动日志落盘已入库，见 BLOCKERS B3.0；修复版尚未在真机双击过；未签名，SmartScreen 会提示） |
 
 **当前能力定位**（外部审查后确认，不要夸大）：可继续开发的工程底座，
 **不是可用阅卷软件**。

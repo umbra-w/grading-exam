@@ -2,29 +2,13 @@ import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import type { AIConfig, AppSettings, ProviderId, TokenUsage } from '@shared/types';
+import { PROVIDER_PRESETS } from '@shared/provider-presets';
 
-/**
- * 供应商预设。与 `src/main/ai/compat.ts` 的 PROVIDER_PRESETS 必须保持一致。
- *
- * 已知重复：这两份 `baseUrl`/`model`/`disableThinking`/`vision` 是同一套事实，
- * 目前各写一遍——**改一处忘另一处就会出现"选了预设但请求发错地址"**。
- * 正确做法是挪到 `shared/` 由两侧共用。此处先内联，不假装已经统一。
+/*
+ * 供应商预设的唯一真源：@shared/provider-presets（与主进程兼容层同源）。
+ * 此前这里内联过一份副本——改一处忘另一处就会出现
+ * 「选了预设但请求发错地址」的静默漂移，已单源化。
  */
-const PRESETS: Array<{
-  id: ProviderId;
-  label: string;
-  baseUrl: string;
-  model: string;
-  disableThinking: boolean;
-  vision: boolean;
-}> = [
-  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o', disableThinking: false, vision: true },
-  { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', disableThinking: true, vision: false },
-  { id: 'qwen', label: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', disableThinking: true, vision: true },
-  { id: 'zhipu', label: '智谱', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-plus', disableThinking: true, vision: true },
-  { id: 'kimi', label: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-32k', disableThinking: true, vision: true },
-  { id: 'custom', label: '自定义（OpenAI 兼容）', baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b', disableThinking: false, vision: false },
-];
 
 export function SettingsPanel(): JSX.Element {
   const [draft, setDraft] = useState<AppSettings | null>(null);
@@ -72,15 +56,15 @@ export function SettingsPanel(): JSX.Element {
   }
 
   function applyPreset(id: ProviderId): void {
-    const p = PRESETS.find((x) => x.id === id);
+    const p = PROVIDER_PRESETS.find((x) => x.id === id);
     if (!p) return;
     patchAI({
       provider: id,
       baseUrl: p.baseUrl,
-      model: p.model,
+      model: p.defaultModel,
       disableThinking: p.disableThinking,
     });
-    void window.gradingExam.writeLog('info', `已切换供应商预设：${p.label}（${p.model}）`);
+    void window.gradingExam.writeLog('info', `已切换供应商预设：${p.label}（${p.defaultModel}）`);
   }
 
   async function onSave(): Promise<void> {
@@ -130,7 +114,7 @@ export function SettingsPanel(): JSX.Element {
           <div className="field">
             <label>供应商预设</label>
             <select value={ai.provider} onChange={(e) => applyPreset(e.target.value as ProviderId)}>
-              {PRESETS.map((p) => (
+              {PROVIDER_PRESETS.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>
@@ -138,7 +122,7 @@ export function SettingsPanel(): JSX.Element {
             </select>
             <span className="sub">
               该预设{' '}
-              {PRESETS.find((p) => p.id === ai.provider)?.vision ? '支持图片输入' : '不支持图片输入（截图评分会失败）'}
+              {PROVIDER_PRESETS.find((p) => p.id === ai.provider)?.vision ? '支持图片输入' : '不支持图片输入（截图评分会失败）'}
             </span>
           </div>
 

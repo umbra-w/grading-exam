@@ -421,3 +421,17 @@ export function gradeYield(
 
   return { result: grade, poorImage: false, blockedApiCall: false };
 }
+
+/* ─────────────────────────── 空白卷检测（照片导入路径） ─────────────────────────── */
+
+/**
+ * 空白卷判定已移至 `src/shared/blank-paper.ts` —— 渲染层的批量导入面板
+ * 也要用同一套规则，判定必须只有一份实现（阈值漂移是最隐蔽的回归）。
+ * 这里 re-export 保持既有引用（评分闸门、30 项单测）不变。
+ */
+export {
+  BLANK_STDDEV_MAX,
+  classifyBlankPaper,
+  type BlankVerdict,
+  type GrayStats,
+} from '../../shared/blank-paper';

@@ -58,6 +58,9 @@ window.gradingExam = {
   resetUsage: async () => ({ prompt: 0, completion: 0, total: 0, costCNY: 0 }),
   getAppInfo: async () => ({
     version: '0.1.0',
+    // 与 AppInfo 真实结构保持一致（§7.4：假桥漂移编译期发现不了）。
+    // 预览里演示"便携模式"，因为它最能体现这个字段的意义。
+    storeSource: 'portable',
     electron: '45.0.0',
     node: '24.11.0',
     chrome: '140.0.0',
@@ -76,6 +79,21 @@ window.gradingExam = {
   writeLog: async () => undefined,
   pickFile: async () => ({ canceled: false, paths: ['C:\\samples\\answer-01.png'] }),
   pickDir: async () => ({ canceled: false, path: 'C:\\exports' }),
+  // F3.4 假桥：返回 1 张真实可解码的 SVG 图（黑白条纹）——
+  // 预览的 Edge 能真解码算出灰度统计，展示「可识别」徽标的真实分支。
+  // 与 paperAggregate 假桥同一理由：真实形状才能让断言抓到字段名写错。
+  readImages: async () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48">' +
+      '<rect width="64" height="48" fill="#ffffff"/><rect width="16" height="48" fill="#111111"/></svg>';
+    return {
+      ok: true,
+      errors: [],
+      images: [
+        { fileName: 'answer-01.png', dataUrl: 'data:image/svg+xml;base64,' + btoa(svg), bytes: 1284 },
+      ],
+    };
+  },
 
   aiTest: async () => ({ ok: true, text: 'pong', usage: { prompt: 8, completion: 2, total: 10, costCNY: 0 }, diag: { model: 'deepseek-v4' } }),
   aiGrade: async () => ({ ok: true, text: '', usage: { prompt: 900, completion: 120, total: 1020, costCNY: 0.02 }, diag: { model: 'x' } }),
@@ -157,6 +175,41 @@ window.gradingExam = {
   },
   exportExcel: async (p) => ({ ok: true, path: String(p?.outPath || 'C:\\exports\\report.xlsx') }),
   exportMarkdown: async (p) => ({ ok: true, path: String(p?.outPath || 'C:\\exports\\report.md') }),
+
+  /*
+   * 整卷聚合的假实现。刻意返回**一份真实的报告形状**（含 null 统计），
+   * 而不是空对象：界面若字段名写错，空对象会让它静默显示占位，
+   * 真实形状才能让 ui:verify 的文案断言抓到问题。
+   */
+  paperAggregate: async (p) => {
+    const results = Array.isArray(p?.results) ? p.results : [];
+    const count = results.length;
+    return {
+      paperId: String(p?.paperId || 'DEMO'),
+      paperTitle: String(p?.paperTitle || '预览试卷'),
+      results,
+      stats: {
+        count,
+        average: count > 0 ? 22 : null,
+        max: count > 0 ? 22 : null,
+        min: count > 0 ? 22 : null,
+        passRate: count > 0 ? 1 : null,
+        fullTotal: 25,
+        mixedFullScore: false,
+        numberValid: true,
+        distribution: [
+          { bucket: '0~59%', count: 0 },
+          { bucket: '60~69%', count: 0 },
+          { bucket: '70~79%', count: 0 },
+          { bucket: '80~89%', count: 0 },
+          { bucket: '90~100%', count },
+        ],
+        lossRanking: [],
+        byType: [{ type: 'calc', count: 1, avgScoreRate: 0.9, reviewRate: 0 }],
+      },
+      generatedAt: Date.now(),
+    };
+  },
 
   /* ---- AI ---- */
   // ⚠ AICallResult 的字段名：诊断信息叫 `diag`（不是 diagnostic），

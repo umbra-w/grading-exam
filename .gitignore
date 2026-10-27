@@ -1,8 +1,15 @@
 node_modules/
 out/
+
+# electron-builder 的打包产物（数百 MB 的 unpacked 目录 + 安装包）。
+# 可以随时用 `pnpm dist` 重建，不该进仓库。
 release/
 dist/
 *.log
+# 注意：build/ **不在**忽略列表里 —— build/icon.ico 与 icon.png 是应用图标，
+# 属于源文件（由 scripts/make_icon.ps1 可重建，但打包需要它们在场）。
+# 只忽略 build 下可能的临时产物。
+build/*.tmp
 .DS_Store
 .env
 .env.local

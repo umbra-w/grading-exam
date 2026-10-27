@@ -20,17 +20,22 @@ import type {
   PaperReport,
   ParseResult,
   PickKind,
+  QuestionMeta,
+  ReadImagesResult,
+  StudentResult,
   TokenUsage,
 } from '../shared/types';
 import {
   getReviewQueue,
   getStorePath,
+  getStoreSource,
   getUsageTotals,
   loadSettings,
   resetUsage,
   saveSettings,
   setReviewQueue,
 } from './store';
+import { describeStoreLocation, resolveStoreDirFromEnv } from './store-path';
 import {
   EMPTY_USAGE,
   gradeQuestion,
@@ -42,7 +47,9 @@ import {
 import { PlatformBrowser } from './page/browser';
   import { AutoRunner } from './page/auto-runner';
 import { parseFile, toIpcResult } from './io/parse';
-import { exportExcel, exportMarkdown } from './io/export';
+import { exportExcel, exportMarkdown, statsWarnings } from './io/export';
+import { readImages } from './io/images';
+import { aggregatePaper } from './io/paper';
 import { compareObjective } from '../shared/objective';
 import {
   applyManualCorrection,
@@ -56,8 +63,45 @@ import {
   sortQueue,
   type ReviewItem,
 } from './ai/review';
+import { flushStartupLog, initStartupLog, logStartup, startupLogPath } from './startup-log';
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
+
+/** pushLog 落盘的条数上限：只覆盖启动阶段，避免影响运行时日志吞吐 */
+const STARTUP_ECHO_MAX = 200;
+let startupEchoCount = 0;
+
+// ★ 尽可能早地打开启动日志。
+//   放在这里而不是 whenReady 里，是因为"模块加载阶段失败"本身就是要抓的目标之一
+//   —— 若等到 whenReady 再开日志，那种失败仍然什么痕迹都不留。
+//   此时 app.getPath() 通常已可用；万不可用就退回临时目录，绝不因为写日志失败而中断启动。
+let startupLogFile = '';
+try {
+  startupLogFile = initStartupLog();
+} catch (e) {
+  startupLogFile = `初始化失败：${(e as Error).message}`;
+}
+logStartup(`main.ts 模块求值完成，输出目录 __dirname_=${__dirname_}`);
+logStartup(`启动日志文件 = ${startupLogFile}`);
+logStartup(`argv=${JSON.stringify(process.argv)}`);
+logStartup(
+  `PORTABLE_EXECUTABLE_DIR=${process.env['PORTABLE_EXECUTABLE_DIR'] ?? '(未设置)'} ` +
+    `GRADING_EXAM_DATA_DIR=${process.env['GRADING_EXAM_DATA_DIR'] ?? '(未设置)'}`,
+);
+
+process.on('uncaughtException', (e) => {
+  logStartup(`!! uncaughtException: ${e.stack ?? e.message}`);
+  flushStartupLog();
+});
+process.on('unhandledRejection', (reason) => {
+  logStartup(`!! unhandledRejection: ${reason instanceof Error ? reason.stack : String(reason)}`);
+});
+process.on('exit', (code) => {
+  // ★ 这一行几乎总能写进去，不管崩溃前发生了什么
+  logStartup(`!! process exit code=${code} (0x${(code >>> 0).toString(16)})`);
+  // 用同步写把完整记录再落一份，避免崩溃丢掉最后几行
+  flushStartupLog();
+});
 
 let mainWindow: BrowserWindow | null = null;
 /** 阅卷窗口管理器；窗口与 CDP 会话在其内部维护 */
@@ -143,6 +187,14 @@ export function pushLog(level: LogLevel, message: string, depth?: number): void 
   // eslint-disable-next-line no-console
   console.log(`[${tag}] ${'  '.repeat(depth ?? 0)}${message}`);
 
+  // ★ 启动阶段前 200 条也落盘。理由：pushLog 原来只进内存/终端/IPC，
+  //   而"窗口还没出来就挂了"的情况恰恰是最需要证据的 —— 那时渲染层不存在，
+  //   终端窗口也随进程消失。设上限是为了不影响运行时的日志吞吐。
+  if (startupEchoCount < STARTUP_ECHO_MAX) {
+    startupEchoCount++;
+    logStartup(`[日志/${tag.trim()}] ${message}`);
+  }
+
   mainWindow?.webContents.send('evt:log', entry);
 }
 
@@ -162,7 +214,7 @@ function createMainWindow(): BrowserWindow {
     title: 'Grading_exam · AI 阅卷助手',
     backgroundColor: '#f4f5f7',
     webPreferences: {
-      preload: join(__dirname_, '../preload/index.js'),
+      preload: join(__dirname_, '../preload/index.cjs'),
       // 安全基线：渲染层不开 Node 权限（PLAN §0 D2）
       contextIsolation: true,
       nodeIntegration: false,
@@ -170,7 +222,73 @@ function createMainWindow(): BrowserWindow {
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  // ★ 渲染进程出错时把原因写成一张页面，而不是让窗口白屏/消失。
+  //   为什么要这个：React 抛错时页面会静默变空白，而"空白"看起来很像"简洁的设计"，
+  //   用户只会说"一闪而过 / 打不开"，开发者拿不到任何线索。
+  //   把错误画到窗口上，等于把诊断信息直接交到用户手里。
+  const showFailure = (title: string, detail: string): void => {
+    logStartup(`!! 渲染层失败 [${title}] ${detail}`);
+    const safe = detail.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c] as string);
+    const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><body style="font:14px/1.6 'Microsoft YaHei',sans-serif;padding:32px;color:#1e2130;background:#fafbff">
+<h1 style="font-size:18px;margin:0 0 12px">界面未能加载</h1>
+<p style="margin:0 0 16px;color:#4b5169">${title}</p>
+<pre style="white-space:pre-wrap;word-break:break-all;background:#fff;border:1px solid #e6e8f2;border-radius:8px;padding:12px;font-size:12px;color:#991b1b">${safe}</pre>
+<p style="margin:16px 0 0;color:#4b5169">诊断日志：<code>${startupLogPath() ?? '(无)'}</code></p>
+</body></html>`;
+    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    if (!win.isVisible()) win.show();
+  };
+
+  // ready-to-show 正常路径；若它一直不来（页面加载失败），3 秒后强制显示，
+  // 至少让用户看到窗口和错误，而不是"一闪而过"后什么都不知道。
+  win.once('ready-to-show', () => {
+    logStartup('ready-to-show 触发 → 显示窗口');
+    win.show();
+  });
+  setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) {
+      logStartup('!! ready-to-show 超时未触发（页面可能加载失败）→ 强制显示窗口');
+      win.show();
+    }
+  }, 3000);
+
+  win.webContents.on('did-finish-load', () => {
+    logStartup(`did-finish-load：页面加载完成 url=${win.webContents.getURL().slice(0, 120)}`);
+    logStartup(`窗口状态 可见=${win.isVisible()} 尺寸=${JSON.stringify(win.getSize())} 标题='${win.getTitle()}'`);
+  });
+  // ★ 窗口「被关闭 / 被隐藏」是最直接的"一闪而过"证据，必须留下。
+  win.on('close', () => logStartup(`!! 窗口 close 事件（可见=${win.isVisible()}）`));
+  win.on('closed', () => {
+    logStartup('!! 窗口 closed 事件 —— 主窗口已销毁');
+    mainWindow = null;
+  });
+  win.on('hide', () => logStartup('!! 窗口 hide 事件'));
+  win.on('minimize', () => logStartup('窗口 minimize 事件'));
+  win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    logStartup(`!! did-fail-load code=${code} desc=${desc} url=${url} isMainFrame=${isMainFrame}`);
+    if (isMainFrame) showFailure('页面加载失败', `code=${code}\n${desc}\n${url}`);
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    logStartup(`!! render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+    showFailure('渲染进程崩溃', `reason=${details.reason}\nexitCode=${details.exitCode}`);
+  });
+  win.webContents.on('unresponsive', () => logStartup('!! 窗口无响应'));
+  win.webContents.on('preload-error', (_e, preloadPath, error) => {
+    // ★ 预加载脚本挂掉时渲染层拿不到任何 API，界面必白屏 —— 这条是关键线索
+    logStartup(`!! preload 加载失败 ${preloadPath}: ${error.message}`);
+    showFailure('预加载脚本加载失败', `${preloadPath}\n${error.stack ?? error.message}`);
+  });
+  // 渲染层的 console 消息（level 3 = error）也要收进日志：React 的报错都从这里出来
+  let consoleLines = 0;
+  win.webContents.on('console-message', (e) => {
+    if (consoleLines >= 100) return;
+    const lvl = String((e as { level?: unknown }).level ?? '?');
+    if (lvl !== '3' && lvl !== 'error') return;
+    consoleLines++;
+    const msg = String((e as { message?: unknown }).message ?? '');
+    const where = `${String((e as { lineNumber?: unknown }).lineNumber ?? '?')}:${String((e as { sourceId?: unknown }).sourceId ?? '?')}`;
+    logStartup(`!! 渲染层 console.error @${where} ${msg.slice(0, 500)}`);
+  });
 
   // 外链走系统浏览器
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -208,6 +326,7 @@ function registerIpc(): void {
     node: process.versions.node,
     chrome: process.versions.chrome,
     storePath: getStorePath(),
+    storeSource: getStoreSource(),
   }));
 
   // 日志回放：渲染层挂载后拉取历史，避免启动前的日志丢失
@@ -231,6 +350,21 @@ function registerIpc(): void {
   ipcMain.handle('io:pickDir', async () => {
     const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
     return { canceled: res.canceled, path: res.filePaths[0] ?? '' };
+  });
+
+  // F3.4 批量导入：读答卷图片为 data URL。解码/统计/空白判定都在渲染层
+  // （浏览器解码自带 EXIF 方向处理），这里只做读文件与编码（见 types.ts）。
+  ipcMain.handle('io:readImages', async (_e, paths: string[]): Promise<ReadImagesResult> => {
+    if (!Array.isArray(paths)) {
+      return { ok: false, images: [], errors: [], error: '没有收到文件路径列表' };
+    }
+    try {
+      return await readImages(paths);
+    } catch (e) {
+      // readImages 内部已逐文件兜错；能走到这里说明框架层出了意外
+      const msg = (e as Error)?.message ?? String(e);
+      return { ok: false, images: [], errors: [], error: `读取图片失败：${msg}` };
+    }
   });
 
   // Phase 4：文件解析与导出。
@@ -280,6 +414,48 @@ function registerIpc(): void {
         pushLog('error', `导出 Excel 失败：${msg}`);
         return { ok: false, error: msg };
       }
+    },
+  );
+
+  /*
+   * 整卷聚合。纯计算通道：不碰磁盘、不联网，所以没有失败路径需要包成
+   * {ok,error} —— 直接返回报告。
+   *
+   * 校验只做"形状对不对"，不做业务修正：把不合格的 results 拦在外面，
+   * 比事后猜学生缺了什么字段要诚实得多。缺明细时返回一份**空统计**的
+   * 报告（各指标为 null），而不是伪造 0 分（§6.1）。
+   */
+  ipcMain.handle(
+    'paper:aggregate',
+    (
+      _e,
+      payload: {
+        paperId: string;
+        paperTitle: string;
+        results: StudentResult[];
+        questionsMeta?: QuestionMeta[];
+      },
+    ): PaperReport => {
+      if (!payload || !Array.isArray(payload.results)) {
+        pushLog('error', '整卷聚合失败：没有收到答卷明细。');
+        return aggregatePaper({
+          paperId: payload?.paperId ?? '',
+          paperTitle: payload?.paperTitle ?? '',
+          results: [],
+        });
+      }
+      const report = aggregatePaper({
+        paperId: payload.paperId,
+        paperTitle: payload.paperTitle,
+        results: payload.results,
+        questionsMeta: payload.questionsMeta,
+      });
+      const warns = statsWarnings(report.stats);
+      pushLog(
+        warns.length > 0 ? 'warn' : 'ok',
+        `已汇总 ${report.stats.count} 份答卷${warns.length > 0 ? `（${warns[0]}）` : ''}`,
+      );
+      return report;
     },
   );
 
@@ -862,10 +1038,16 @@ function cfgModelSafe(): string {
 /* --------------------------------------------------------------- 生命周期 */
 
 // 单实例锁：防止两个实例同时操作同一个阅卷平台会话
+logStartup('即将 await app.whenReady()');
+
 if (!app.requestSingleInstanceLock()) {
+  // ★ 单实例锁拿不到时**不会**创建窗口 —— 现象就是"双击后窗口一闪/根本不出现"。
+  //   以前这里只有一行 app.quit()，什么痕迹都不留，非常难查。现在会记日志并提示。
+  logStartup('!! requestSingleInstanceLock 返回 false → 已有实例在运行，本实例将退出');
   app.quit();
 } else {
   app.on('second-instance', () => {
+    logStartup('second-instance：第二次双击，聚焦已有窗口');
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -873,12 +1055,18 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    logStartup('whenReady 已触发');
     registerIpc();
+    logStartup('IPC 已注册，准备创建主窗口');
     mainWindow = createMainWindow();
+    logStartup(`主窗口已创建（isDestroyed=${mainWindow.isDestroyed()}）`);
 
     pushLog('info', `Grading_exam v${app.getVersion()} 启动`);
     pushLog('info', `Electron ${process.versions.electron} / Chrome ${process.versions.chrome} / Node ${process.versions.node}`);
     pushLog('info', `配置存放于 ${getStorePath()}`);
+    // 便携版必须告诉用户数据在哪：整个目录拷走即可带走全部数据。
+    // 默认位置则说明"不随程序目录移动"，避免用户以为拷走 exe 就带走了配置。
+    pushLog('info', describeStoreLocation(resolveStoreDirFromEnv(process.env)));
 
     const usage = getUsageTotals();
     pushUsage({
@@ -895,5 +1083,16 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  logStartup(`window-all-closed：所有窗口已关闭（平台 ${process.platform}）`);
+  // ★ 诊断开关 GE_KEEP_ALIVE=1：不退出，让应用留在后台。
+  //   用来判定"一闪而过"是否由窗口被关闭触发 —— 因为 showFailure 会重载页面，
+  //   万一过程中窗口被销毁，就会走进这里连锁退出。
+  if (process.env['GE_KEEP_ALIVE'] === '1') {
+    logStartup('GE_KEEP_ALIVE=1 → 不退出，保持进程存活以便观察');
+    return;
+  }
+  if (process.platform !== 'darwin') {
+    logStartup('非 macOS → app.quit()');
+    app.quit();
+  }
 });

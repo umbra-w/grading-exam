@@ -238,6 +238,9 @@ export interface AppInfo {
   node: string;
   chrome: string;
   storePath: string;
+  /** 数据目录的决策来源。让界面能如实说明"数据在哪" ——
+   *  便携版尤其重要：用户需要知道整个目录拷走就能带走数据。 */
+  storeSource: 'explicit' | 'portable' | 'default';
 }
 
 export interface GradeResult {
@@ -443,6 +446,25 @@ export interface StudentSubmission {
   extractedDraft?: string;
 }
 
+/** 一张已读入内存的答卷图片（F3.4 批量导入用） */
+export interface ImportedImage {
+  /** 原始文件名（仅用于展示与排序，不作为学生身份依据） */
+  fileName: string;
+  /** data URL（data:image/jpeg;base64,...），渲染层直接 <img> 可显、可解码算灰度统计 */
+  dataUrl: string;
+  /** 原始字节数 */
+  bytes: number;
+}
+
+export interface ReadImagesResult {
+  ok: boolean;
+  /** 读取成功的图。失败的**不混在里面**，逐条进 errors —— 混在一起就是静默丢图 */
+  images?: ImportedImage[];
+  /** 逐文件失败原因（含扩展名不支持），必须展示 */
+  errors?: string[];
+  error?: string;
+}
+
 export interface StudentResult {
   submissionId: string;
   name: string;
@@ -454,21 +476,81 @@ export interface StudentResult {
   gradedAt: number;
 }
 
+/** 按题型/学科等维度分层统计的一行（F3.6「分层统计内置」的落点） */
+export interface StratifiedStat {
+  /** 分层键。当前用题型；将来加学科/图片质量层时复用这个形状 */
+  type: QuestionType;
+  /** 该层的样本数（题次数，不是人数） */
+  count: number;
+  /**
+   * 平均得分率（0~1）。
+   *
+   * 为什么用**得分率**而不是平均分：不同题型满分不同，
+   * 平均分跨题型不可比（§6.2）。`null` 表示该层样本的满分全为非正数，
+   * 算不出得分率 —— 此时**不能给 0**，那会显示成"全错"。
+   */
+  avgScoreRate: number | null;
+  /** 该层被标记需复核的比例（0~1）。用来回答"哪类题最不可靠" */
+  reviewRate: number;
+}
+
+export interface PaperStats {
+  count: number;
+  /**
+   * 平均分 / 最高分 / 最低分 / 及格率。
+   *
+   * 为什么可为 `null`：**「没有答卷」与「全班 0 分」必须区分**。
+   * 若用 0 表示无数据，一份还没导入答卷的班级会显示
+   * "平均分 0、及格率 0%"—— 看起来像一个真实且灾难性的结果（§6.1）。
+   */
+  average: number | null;
+  max: number | null;
+  min: number | null;
+  /** 及格率（0~1），按**归一化得分率** ≥ 0.6 判定，不是绝对分 60（§6.2） */
+  passRate: number | null;
+  /** 统计所依据的满分基准（人数最多的那个满分） */
+  fullTotal: number;
+  /**
+   * 是否混入了不同满分的答卷。
+   *
+   * 混合满分下所有汇总数字都只有参考价值，必须让教师看见这件事，
+   * 而不是悄悄按某个基准算完就完。
+   */
+  mixedFullScore: boolean;
+  /**
+   * 汇总数字是否落在有效范围内（总分 ∈ [0, 满分]，满分 > 0）。
+   *
+   * `false` 表示数据有问题（漏改、重复计分、满分缺失）。
+   * 此时 `average` 仍然给出 —— 教师需要看到数字才能定位问题 ——
+   * 但界面**必须**据此加警告。给出数字却不说明它不可信，
+   * 正是 §6.1 那类静默失败。
+   */
+  numberValid: boolean;
+  /** 分箱直方图：按归一化得分率分箱，空箱保留（否则看不出分布形状） */
+  distribution: Array<{ bucket: string; count: number }>;
+  /** 失分点聚合，按出现次数降序 */
+  lossRanking: Array<{ point: string; count: number }>;
+  /** 分层统计（F3.6）。空数组表示没有可分层的明细 */
+  byType: StratifiedStat[];
+}
+
+/**
+ * 一道题的元信息。整卷聚合按它给明细补题型/满分。
+ *
+ * 为什么住在 `shared` 而不是 `main/io/paper.ts`：IPC 契约引用了它，
+ * 而 shared 层不能依赖 main 层（§4.4 分层）。
+ */
+export interface QuestionMeta {
+  questionId: string;
+  type: QuestionType;
+  fullScore: number;
+}
+
 export interface PaperReport {
   paperId: string;
   paperTitle: string;
   results: StudentResult[];
-  stats: {
-    count: number;
-    average: number;
-    max: number;
-    min: number;
-    passRate: number;
-    /** 分箱直方图：区间下界 → 人数 */
-    distribution: Array<{ bucket: string; count: number }>;
-    /** 失分点聚合 */
-    lossRanking: Array<{ point: string; count: number }>;
-  };
+  stats: PaperStats;
   generatedAt: number;
 }
 
@@ -618,6 +700,32 @@ export interface IPC {
    * 后者会让用户以为"试卷是空的"，是最典型的静默失败。
    */
   'io:parseFile': (filePath: string) => ParseResult;
+  /**
+   * 读取一批答卷图片为 data URL（F3.4 批量导入）。
+   *
+   * 职责刻意收窄：只做「选好的路径 → 读字节 → 编 data URL」，
+   * **不做**解码、灰度统计、空白判定 —— 那些放渲染层：
+   * 浏览器 `<img>` 解码自带 EXIF 方向处理（手机照片的旋转问题
+   * 在 Node 侧要额外引库才能解决，浏览器免费拿到）。
+   * 失败逐文件进 `errors`，绝不把坏图静默混进 `images`。
+   */
+  'io:readImages': (paths: string[]) => ReadImagesResult;
+  /**
+   * 整卷聚合：把逐题批改结果汇总成 `PaperReport`（F3.5/F3.6/F4.1）。
+   *
+   * 为什么必须是通道而不是让渲染层自己 import `main/io/paper.ts`：
+   * 聚合口径（及格线、分箱、分层、空值语义）必须只有一处实现。
+   * 渲染层再写一遍，导出的 Excel 与界面显示就会在某个边界对不上，
+   * 而那种不一致**不会有任何报错**。
+   *
+   * 纯计算，不碰文件系统、不联网。
+   */
+  'paper:aggregate': (payload: {
+    paperId: string;
+    paperTitle: string;
+    results: StudentResult[];
+    questionsMeta?: QuestionMeta[];
+  }) => PaperReport;
   /** 导出 Excel（仅 .xlsx，不出 CSV：UTF-8 CSV 在中文 Excel 里会乱码） */
   'io:exportExcel': (payload: {
     report: PaperReport;

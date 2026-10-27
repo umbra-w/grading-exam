@@ -81,6 +81,12 @@ const api = {
   }): Promise<{ canceled: boolean; paths: string[] }> => invoke('io:pickFile', opts),
   pickDir: (): Promise<{ canceled: boolean; path: string }> => invoke('io:pickDir'),
   /**
+   * F3.4：读答卷图片为 data URL。职责刻意收窄（解码/统计/空白判定
+   * 在渲染层 —— 浏览器解码自带 EXIF 方向处理），见 types.ts 注释。
+   */
+  readImages: (paths: string[]): Promise<ReturnType<IPC['io:readImages']>> =>
+    invoke('io:readImages', paths),
+  /**
    * 解析文件为纯文本。**不抛异常**：失败时返回 `{ok:false, code, message}`，
    * `message` 是中文说明且包含"下一步怎么办"，可直接展示给用户。
    */
@@ -90,6 +96,14 @@ const api = {
     invoke('io:exportExcel', payload),
   exportMarkdown: (payload: Parameters<IPC['io:exportMarkdown']>[0]) =>
     invoke('io:exportMarkdown', payload),
+
+  /*
+   * 整卷聚合。做成便捷方法而不是让渲染层自己算：
+   * 聚合口径（及格线、分箱、分层、空值语义）必须只有一处实现，
+   * 否则导出的 Excel 与界面显示会在某个边界对不上，而不报错。
+   */
+  paperAggregate: (payload: Parameters<IPC['paper:aggregate']>[0]) =>
+    invoke('paper:aggregate', payload),
   /**
    * 客观题本地比对。**零网络零 token** —— 界面上标记为"本地比对"的路径
    * 走的就是它，任何时候都不应该产生 API 费用。

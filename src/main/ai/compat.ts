@@ -9,65 +9,13 @@
  *     thinking），正文为空时必须回退读取。
  *  3. max_tokens 给小了（4000）同样会正文为空，默认值必须给足。
  */
-import type { AIConfig, ChatMessage, ProviderPreset } from '../../shared/types';
+import type { AIConfig, ChatMessage } from '../../shared/types';
 import { VISION_MODEL_PREFIXES } from '../../shared/types';
+import { PROVIDER_PRESETS } from '../../shared/provider-presets';
 
-export const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o',
-    disableThinking: false,
-    vision: true,
-    sampleModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
-  },
-  {
-    id: 'deepseek',
-    label: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
-    disableThinking: true, // ★ 必须关
-    vision: false,
-    sampleModels: ['deepseek-chat', 'deepseek-flash', 'deepseek-v4'],
-  },
-  {
-    id: 'qwen',
-    label: '通义千问',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    defaultModel: 'qwen-plus',
-    disableThinking: true,
-    vision: true,
-    sampleModels: ['qwen-plus', 'qwen-max', 'qwen-vl-max', 'qwen2.5-vl-72b-instruct'],
-  },
-  {
-    id: 'zhipu',
-    label: '智谱',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    defaultModel: 'glm-4-plus',
-    disableThinking: true,
-    vision: true,
-    sampleModels: ['glm-4-plus', 'glm-4v-plus', 'glm-4.1v'],
-  },
-  {
-    id: 'kimi',
-    label: 'Kimi',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    defaultModel: 'moonshot-v1-32k',
-    disableThinking: true,
-    vision: true,
-    sampleModels: ['moonshot-v1-32k', 'kimi-latest', 'moonshot-v1-8k-vision-preview'],
-  },
-  {
-    id: 'custom',
-    label: '自定义（OpenAI 兼容）',
-    baseUrl: 'http://127.0.0.1:11434/v1',
-    defaultModel: 'qwen2.5:7b',
-    disableThinking: false,
-    vision: false,
-    sampleModels: [],
-  },
-];
+// 预设的唯一真源在 shared/provider-presets.ts（设置面板同源）。
+// re-export 保持既有引用（store.ts 等）不变。
+export { PROVIDER_PRESETS };
 
 export const DEFAULT_MAX_TOKENS = 8000; // ★ 不是 4000
 

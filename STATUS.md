@@ -9,7 +9,7 @@
 
 **仓库已初始化并 11 次提交。**
 外部审查提出 10 条问题，**技术上全部属实**（其中两条引用的是旧代码：
-单题界面已实现、单测已是 620 项而非 300）。
+单题界面已实现、单测已是 831 项而非 300）。
 按审查建议的顺序逐条修，本轮完成前 3 条、第 4 条的决策层，以及第 5 条（复核闭环）。
 
 ### 0.0 能力定位（采纳审查结论，不掩饰）
@@ -26,7 +26,10 @@
 | 低置信度数据判断 | **已完成**（标记 + 复核闭环 + 人工修正） |
 | 复核队列 | **已完成**（`review.ts` 72 项单测 + 复核界面，可改分/裁定/删除） |
 | 单题阅卷界面 | **已完成**（本轮） |
-| 整卷阅卷 / 学情分析 | 未完成 |
+| 整卷聚合与统计 | **可用**：口径（`io/paper.ts`）+ 导出（`io/export.ts`）+ 界面（`PaperPanel` 粘贴录入 + **批量图片导入与自动判分区**）+ `paper:aggregate` 通道。及格率/分箱**按归一化得分率**、按题型分层、空数据给 `null` 而非 0；批量图片识别**全链路已接通**（`io:readImages` 读图 → 渲染层解码算灰度统计 → `classifyBlankPaper` 拦空白卷 → `ai:visionAnswers` 识别 → `answer-import.ts` 对齐去重 → `grade-pipeline.ts` 判分：客观题本地比对零 token / 主观题 AI 评分 → 成绩行回填校验），⚠ **视觉调用与 AI 评分未在真机验证**（需 API Key + 视觉模型），所有结果先列出供人工核对，界面已如实标注 |
+| 打包 | **免安装，双击即用**：按要求移除了 NSIS 安装程序，`pnpm dist` 实测产出单文件便携版 exe（109 MB）+ 免安装 zip（171 MB）。校验通过：无任何安装包、产品名/版权正确、图标字节级确认已嵌入、应用文件与 `electron-store`/`exceljs`/`mammoth`/`pdf-parse` 齐全、preview/tests 未混入。**便携数据目录已接通**：`PORTABLE_EXECUTABLE_DIR`（electron-builder 的 portable 启动器注入，见其 `portable.nsi:77`）→ 数据落 exe 旁的 `data\`，拷走目录即带走数据；14 项单测 + 6 种环境组合的链路验证。⚠ 未签名（SmartScreen 会提示"未知发布者"）；⚠ **双击启动 🟡 待复核**："一闪而过"真因已定位并修复（preload CJS 被 `type:module` 当 ESM 解析 → `.cjs` 修复 + 启动日志落盘 `data/startup.log`，见 BLOCKERS B3.0），修复版尚未在真机双击过 |
+| 开源合规 | **可用**：MIT `LICENSE` + `README.md` 已补。此前 `package.json` 写着 `"license": "MIT"` 但**仓库里没有许可证文本** —— 那样"开源、可自行构建"在法律上不成立（默认保留所有权利） |
+| 学情分析 | **可用**：教学建议由 `analysis.ts` 生成，**每条强制带数据依据**（`evidence` 必含数字）；数据不可信或样本 <5 份时**拒绝给结论**并说明原因。失分点需 AI 逐点判定才有数据，手工录入不产生 |
 | 连续自动阅卷 | **决策层 + 执行层代码均已完成**，⚠ 真机端到端未验证 |
 | 自动填分与提交 | 调用链已完整（`auto:*` → `AutoRunner` → CDP），⚠ **未在真机验证**；不合格图片会拒绝填分 |
 | 真实准确率 | **尚无有效实测** |
@@ -277,7 +280,7 @@ pnpm ui:verify     # 打包 → 起服务 → 逐面板截图 → 断言 → 对
 | **假桥一致性防漂移** | ✅ | `tests/preview-parity.test.ts` + 9 项（已验证会真红） |
 | **复核队列（判定 + 界面）** | ✅ | `ai/review.ts` 72 项 + `ReviewPanel.tsx` + 4 个 `review:*` 通道 |
 | CDP 与窗口编排 | ⚠ 薄绑定，**未验证** | 依赖真机（见 §3） |
-| 单元测试总数 | ✅ | **620 项全过（17 套件）** |
+| 单元测试总数 | ✅ | **831 项全过（26 套件）** |
 | 评测指标库 | ✅ | 33 项自测 / 流水线 12 项自测 |
 | **Electron GUI 启动验证** | ❌ **受环境阻塞** | 见 §3 |
 
@@ -378,7 +381,7 @@ cd C:\Users\admin\Desktop\_agent_workspace\Grading_exam
 
 pnpm typecheck                 # 双 project 类型检查，两侧 exit=0
 pnpm build                     # electron-vite 三端构建
-pnpm test                      # vitest：620 项全过
+pnpm test                      # vitest：831 项全过
 pnpm metrics:selftest          # 指标库：33 项全过
 pnpm eval:selftest             # 评测流水线：12 项全过
 pnpm validate:dataset          # 数据集契约校验
@@ -394,7 +397,7 @@ pnpm verify:all                # typecheck + test + ipc:check + 数据 + 冻结 
 实测结果（本轮末）：
 
 - `tsc` 双侧 `exit=0`；`electron-vite build` 三端全过
-- `vitest` **620 passed**（17 套件）：
+- `vitest` **831 passed**（26 套件）：
   review 72 / geometry 66 / ai 60 / picker 54 / ensemble 51 / locator 45 /
   objective 39 / autoloop 37 / selector 35 / parse 34 / isolation 19 /
   pick-protocol 16 / preview-parity 9

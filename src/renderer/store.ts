@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { AppInfo } from '../preload/index';
-import type { LogEntry, TokenUsage } from '../shared/types';
+import type { LogEntry, PaperReport, TokenUsage } from '../shared/types';
 
 export type PageKey = 'single' | 'review' | 'paper' | 'browser' | 'analysis' | 'settings';
 
@@ -29,8 +29,20 @@ interface State {
   usage: TokenUsage;
   appInfo: AppInfo | null;
   ready: boolean;
+  /**
+   * 最近一次整卷汇总结果。
+   *
+   * 放在这里而不是让面板各自持有：整卷阅卷负责**产出**报告，
+   * 学情分析负责**解读**它。两个面板各算一次的话，聚合口径就有两份实现，
+   * 它们会在某个边界给出不一致的数字，而那种不一致不会报错。
+   *
+   * 刻意**不持久化**：报告依赖当次录入的数据，重启后旧报告会与显示的
+   * 题目定义对不上，留着比清掉更容易误导人。
+   */
+  lastReport: PaperReport | null;
 
   setPage: (p: PageKey) => void;
+  setLastReport: (r: PaperReport | null) => void;
   appendLog: (e: LogEntry) => void;
   setLogs: (l: LogEntry[]) => void;
   setUsage: (u: TokenUsage) => void;
@@ -49,8 +61,11 @@ export const useStore = create<State>((set) => ({
   usage: { prompt: 0, completion: 0, total: 0, costCNY: 0 },
   appInfo: null,
   ready: false,
+  lastReport: null,
 
   setPage: (page) => set({ page }),
+
+  setLastReport: (lastReport) => set({ lastReport }),
 
   appendLog: (e) =>
     set((s) => {

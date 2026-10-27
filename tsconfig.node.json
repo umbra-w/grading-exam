@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"],
@@ -28,6 +29,7 @@
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
     "tests/**/*.ts",
+    "scripts/**/*.ts",
     "electron.vite.config.ts",
     "vitest.config.ts"
   ]

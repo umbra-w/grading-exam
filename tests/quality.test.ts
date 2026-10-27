@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MARGINAL_LONGEST_EDGE,
   MIN_LONGEST_EDGE,
+  classifyBlankPaper,
   classifyImageQuality,
   parsePngSize,
 } from '../src/main/page/quality';
@@ -219,5 +220,39 @@ describe('分级与判定链的一致性', () => {
       const r = classifyImageQuality(c);
       if (r.mustReview) expect(r.shouldReview).toBe(true);
     }
+  });
+});
+
+describe('classifyBlankPaper —— 照片导入的空白卷检测（API 调用之前）', () => {
+  it('全白页判 blank：不调 API，直接拦下', () => {
+    expect(classifyBlankPaper({ mean: 254, stdDev: 0.5, samples: 50000 })).toBe('blank');
+  });
+
+  it('全黑页（镜头盖/压黑）也判 blank —— 判据是"无内容"，不是"是不是白纸"', () => {
+    expect(classifyBlankPaper({ mean: 3, stdDev: 0, samples: 50000 })).toBe('blank');
+  });
+
+  it('真实答卷照片（有字迹/纹理/光照渐变）判 usable', () => {
+    expect(classifyBlankPaper({ mean: 205, stdDev: 45, samples: 50000 })).toBe('usable');
+    expect(classifyBlankPaper({ mean: 180, stdDev: 18, samples: 50000 })).toBe('usable');
+  });
+
+  it('阈值边界：严格小于判 blank，正好压线放行（宁可多花一次识别）', () => {
+    expect(classifyBlankPaper({ mean: 250, stdDev: 5.9, samples: 50000 })).toBe('blank');
+    expect(classifyBlankPaper({ mean: 250, stdDev: 6, samples: 50000 })).toBe('usable');
+  });
+
+  it('统计量缺失/非法一律 unknown —— "没测"绝不冒充"测过"，放行走复核兜底', () => {
+    expect(classifyBlankPaper(null)).toBe('unknown');
+    expect(classifyBlankPaper({ mean: NaN, stdDev: 10, samples: 100 })).toBe('unknown');
+    expect(classifyBlankPaper({ mean: 200, stdDev: NaN, samples: 100 })).toBe('unknown');
+    expect(classifyBlankPaper({ mean: 200, stdDev: 10, samples: 0 })).toBe('unknown');
+  });
+
+  it('不改入参', () => {
+    const stats = { mean: 250, stdDev: 5, samples: 100 };
+    const snapshot = { ...stats };
+    classifyBlankPaper(stats);
+    expect(stats).toEqual(snapshot);
   });
 });

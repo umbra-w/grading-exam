@@ -3,8 +3,23 @@
  * electron-store 12 为 ESM-only，本文件运行在 electron-vite 的 ESM 主进程构建中。
  */
 import Store from 'electron-store';
+import path from 'node:path';
 import type { AIConfig, AppSettings, GradingMode } from '../shared/types';
 import { DEFAULT_MAX_TOKENS, PROVIDER_PRESETS } from './ai/compat';
+import { resolveStoreDirFromEnv } from './store-path';
+
+/**
+ * ★ 数据落盘位置在**模块加载时**决策一次，之后不再变。
+ *
+ * 为什么在模块顶层定而不是在 getStore() 里：electron-store 的 `cwd` 只在
+ * 构造时生效，创建之后再改不会搬数据。分散决策会导致"读到一半换了目录"
+ * 这种极难排查的问题，所以这里一次性定死。
+ *
+ * 便携版（electron-builder 的 portable 目标）通过 `PORTABLE_EXECUTABLE_DIR`
+ * 让数据落在 exe 所在目录，整个目录拷走即可带走全部数据；
+ * 否则回落 electron-store 默认的 userData。判据与理由见 store-path.ts。
+ */
+const STORE_DIR = resolveStoreDirFromEnv(process.env);
 
 export interface PersistedSchema {
   settings: AppSettings;
@@ -55,6 +70,10 @@ function getStore(): Store<PersistedSchema> {
   if (!store) {
     store = new Store<PersistedSchema>({
       name: 'grading-exam',
+      // 仅在便携/显式指定时传 cwd；为 undefined 时 electron-store 用自己的默认
+      // 位置（userData）。刻意不自己拼一个默认路径 —— 那会绕过它的默认行为，
+      // 将来它换位置我们不会跟着走。
+      cwd: STORE_DIR.cwd,
       defaults: {
         settings: DEFAULT_SETTINGS,
         pickProfiles: {},
@@ -147,5 +166,13 @@ export function setReviewQueue(items: readonly unknown[]): void {
 }
 
 export function getStorePath(): string {
-  return getStore().path;
+  // ★ 便携模式下 electron-store 拼出来的是 `D:/App/data\grading-exam.json`
+  //   （传入的 cwd 用了正斜杠，它自己补的是反斜杠）。混用分隔符的路径
+  //   用户复制出来会以为写错了，所以统一规范化成当前平台的原生形式。
+  return path.normalize(getStore().path);
+}
+
+/** 数据目录的决策来源，供界面如实告知用户"数据在哪"（便携版尤其需要）。 */
+export function getStoreSource(): 'explicit' | 'portable' | 'default' {
+  return STORE_DIR.source;
 }

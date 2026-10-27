@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "author": "Grading_exam contributors",
   "main": "./out/main/index.js",
   "engines": {
     "node": ">=20.19.0"
@@ -13,11 +14,12 @@
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
+    "icon": "pwsh -NoProfile -File scripts/make_icon.ps1 && pwsh -NoProfile -File scripts/check_icon.ps1",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "electron --no-sandbox scripts/smoke-main.cjs",
-    "dist": "npm run build && electron-builder --win --x64",
+    "dist": "npm run icon && npm run build && electron-builder --win --x64",
     "fixtures": "python -m http.server 8000 --bind 127.0.0.1 --directory tests/fixtures",
     "validate:dataset": "python scripts/validate_dataset.py ../Grading_exam_research/标注模板_测试集.csv",
     "migrate:dataset": "python scripts/migrate_dataset.py --dry-run",
@@ -27,10 +29,16 @@
     "freeze:show": "python scripts/freeze.py --show",
     "freeze:verify": "python scripts/freeze.py --verify",
     "ipc:check": "python scripts/check_ipc.py --events",
+    "tree:check": "python scripts/check_tree.py",
+    "check:doc-counts": "python scripts/check_doc_counts.py",
+    "check:package": "python scripts/check_package.py",
+    "check:portable": "node --experimental-strip-types scripts/check_portable_path.ts",
+    "probe:package": "python scripts/probe_package.py",
     "ui:preview": "vite build --config preview/vite.config.mjs",
     "ui:serve": "python -m http.server 8765 --bind 127.0.0.1 --directory preview/dist",
     "ui:verify": "python preview/verify_ui.py --render",
-    "verify:all": "npm run typecheck && npm run test && npm run ipc:check && npm run validate:dataset && npm run freeze:verify && npm run metrics:selftest && npm run eval:selftest"
+    "verify:all": "npm run typecheck && npm run test && npm run ipc:check && npm run tree:check && npm run validate:dataset && npm run freeze:verify && npm run metrics:selftest && npm run eval:selftest && npm run check:doc-counts",
+    "verify:artifacts": "pwsh -NoProfile -File scripts/verify_artifacts.ps1"
   },
   "dependencies": {
     "electron-store": "^12.0.0",
@@ -58,27 +66,39 @@
   "build": {
     "appId": "io.github.grading-exam.app",
     "productName": "Grading_exam",
+    "copyright": "Copyright © 2026 Grading_exam contributors",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "!preview/**",
+      "!tests/**",
+      "!scripts/**",
+      "!**/*.map"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]
         }
-      ]
+      ],
+      "artifactName": "${productName}-${version}-免安装.${ext}"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+    "portable": {
+      "artifactName": "${productName}-${version}-便携版.${ext}"
     }
   }
 }

@@ -26,7 +26,14 @@ export default defineConfig({
         output: {
           // 阅卷页 preload 需要传统脚本格式注入，不能是 ESM
           format: 'cjs',
-          entryFileNames: '[name].js',
+          // ★ 必须是 .cjs，不能是 .js。
+          //   打包后的 package.json 带 "type": "module"，所以名为 .js 的文件会被
+          //   Node 按 ESM 解析，而这里产出的内容是 CJS（`require("electron")`），
+          //   于是 Electron 加载 preload 时直接抛
+          //   「ReferenceError: require is not defined in ES module scope」。
+          //   后果不是报错退出，而是 window.gradingExam 不存在 → 渲染层白屏
+          //   → 窗口随即消失，正是"窗口一闪而过"的真因（2026-10-26 实测定位）。
+          entryFileNames: '[name].cjs',
         },
       },
     },

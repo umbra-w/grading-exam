@@ -61,6 +61,20 @@
 | **不解决的后果** | 代码能写、能构建、能类型检查，但**看不到界面**，交互缺陷要等换机器才暴露 |
 | **详细记录** | [STATUS.md](STATUS.md) §3 |
 
+#### B3.0 · 2026-10-26 更新：真机证据链与一次已修复的真实启动故障
+
+| 事实 | 来源 |
+|---|---|
+| 构建机连 `electron.exe --version` 都崩（`0x80000003` STATUS_BREAKPOINT），9 种 flag 组合全部在模块求值前崩溃；系统 Edge（同为 Chromium）正常渲染 ⇒ **构建机限制 ≠ 应用代码问题** | 诊断探针（`scripts/electron_probe.cjs`、`scripts/edge_probe.mjs`，均已入库） |
+| 用户真机**窗口能出现**但"一闪而过"—— 此前零日志可查（`pushLog` 不落盘） | 用户反馈 |
+| 修复版启动日志在真机抓到真因：**preload 产物是 CJS 内容却叫 `.js`，被 `type:module` 当 ESM 解析** → `require is not defined` → 界面白屏 | 真机 `startup.log` 截图（用户提供） |
+| 已修：preload 输出改 `.cjs`（`electron.vite.config.ts` + 两处引用 + `check_package.py`），并以 `tests/preload-format.test.ts` 6 项钉死（逐项注入验证过会红） | commit `c0dac81` |
+
+**遗留状态**：修复后的 exe 尚未在真机复核（用户明确暂不做真机检验）。
+"双击启动"从 ⬜ 变为 **🟡 待复核**：真因已修、修复已入库，但修复版本身没被双击过。
+可观测性已补齐（`src/main/startup-log.ts` 启动全链路落盘 `data/startup.log`），
+下次真机出问题会有证据而不是"一闪而过"。
+
 #### B3.1 排查选项与利弊
 
 | 选项 | 利 | 弊 | 成本 |

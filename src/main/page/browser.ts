@@ -236,8 +236,10 @@ export class PlatformBrowser {
   }
 
   private viewerPreloadPath(): string {
-    // 构建后 preload 与 main 同在 out/ 下；开发期亦由 electron-vite 统一产出
-    return new URL('../preload/viewer.js', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    // 构建后 preload 与 main 同在 out/ 下；开发期亦由 electron-vite 统一产出。
+    // ★ 扩展名必须是 .cjs：打包后的 package.json 带 "type": "module"，
+    //   名为 .js 的 CJS 产物会被当 ESM 解析并抛 require is not defined。
+    return new URL('../preload/viewer.cjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
   }
 
   private async enableCdp(): Promise<void> {
