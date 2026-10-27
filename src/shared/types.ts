@@ -134,6 +134,87 @@ export interface ImagePart {
   mime: string;
 }
 
+/* ------------------------------------------------------- 复核队列（P1-8） */
+
+/*
+ * 这几个形状放在 `shared` 而不是 `main/ai/review.ts` 里的原因：
+ * 它们要经 IPC 传到渲染层，属于**跨进程契约**，而契约只有一处真源（§4.1）。
+ * 判定与修正的**行为**仍在 `main/ai/review.ts`（纯逻辑，有单测）；
+ * 这里只放数据形状。逻辑模块会 re-export 这些类型，
+ * 调用方不必知道定义在哪。
+ */
+
+/**
+ * 一条待人工复核的评分。
+ *
+ * `original` 与 `effective` **必须分开**：
+ *   · `original` 是模型原话，用于对照"模型当初说了什么"，永不修改
+ *   · `effective` 是当前生效的分数，人工修正后改变
+ * 合成一个字段就无法回答"老师改之前模型给的是几分"，
+ * 而那正是评估模型质量与复现争议的唯一依据。
+ */
+export interface ReviewItem {
+  /** 稳定 id（同一份答卷的同一题只应有一条） */
+  id: string;
+  /** 归属：试卷 / 题号 */
+  paperId: string;
+  questionNo: string;
+  subject: string;
+  createdAt: number;
+  updatedAt: number;
+  /** 模型原始输出，**不可变** */
+  original: GradeResult;
+  /** 当前生效的结果 */
+  effective: GradeResult;
+  reasons: ReviewReason[];
+  status: ReviewStatus;
+  /** 修正历史，append-only */
+  history: CorrectionRecord[];
+  /** 人工填写的最新理由 */
+  note?: string;
+  /** 该题满分（入队时快照，避免之后取不到） */
+  fullScore: number;
+}
+
+export type ReviewStatus = 'pending' | 'corrected' | 'confirmed' | 'excluded';
+
+export type ReviewReason =
+  | 'low_confidence'
+  | 'output_warnings'
+  | 'ensemble_disagreement'
+  | 'poor_image'
+  | 'objective_suspect'
+  | 'extreme_score'
+  | 'model_requested';
+
+export interface CorrectionRecord {
+  at: number;
+  /** 谁改的（空表示未填写） */
+  by: string;
+  fromScore: number;
+  toScore: number;
+  /** 被翻转为"命中"的评分点 */
+  markedHit: string[];
+  /** 被翻转为"未命中"的评分点 */
+  markedMissed: string[];
+  note: string;
+}
+
+export interface ReviewStats {
+  total: number;
+  pending: number;
+  corrected: number;
+  confirmed: number;
+  excluded: number;
+  /**
+   * 人工复核后**真的改分**的比例。null 表示还没有任何人工结论
+   * —— 不是 0：「没测过」≠「测过且通过」（§6.3）。
+   */
+  correctionRate: number | null;
+  /** 人工修正带来的净分数变化 */
+  netScoreDelta: number;
+}
+
 /**
  * AI 评分结果（结构化）。
  *
@@ -550,6 +631,47 @@ export interface IPC {
     acceptable?: string[];
     optionText?: Record<string, string>;
   }) => ObjectiveVerdictResult;
+
+  /* --------------------------------------------------- 复核队列（P1-8） */
+
+  /**
+   * 读取复核队列。
+   *
+   * 为什么让主进程返回 `stats` 而不是让渲染层自己算：修正率的口径
+   * （哪些状态算"人工下了结论"、`excluded` 算不算分母）必须只有一处定义。
+   * 渲染层再算一遍就会在边界上分叉，而"修正率"正是判断模型能不能用的依据。
+   */
+  'review:queue': () => {
+    items: ReviewItem[];
+    stats: ReviewStats;
+    /** 结构损坏被跳过的条数。>0 必须显示出来，否则用户以为队列是空的 */
+    invalidDropped: number;
+  };
+
+  /** 人工修正：手填分数 / 翻转评分点 */
+  'review:correct': (payload: {
+    id: string;
+    score?: number;
+    /** 改为命中的评分点（文字须在 missedPoints 里） */
+    markHit?: string[];
+    /** 改为未命中的评分点（文字须在 hitPoints 里） */
+    markMissed?: string[];
+    /** 各评分点分值。**只有提供了它**，翻转评分点时才会重算总分 */
+    pointScores?: Array<{ point: string; score: number }>;
+    note?: string;
+    by?: string;
+  }) => { ok: boolean; item?: ReviewItem; warnings: string[]; error?: string };
+
+  /** 人工确认模型没错 / 判定该题不参与评分（不改分数） */
+  'review:verdict': (payload: {
+    id: string;
+    status: 'confirmed' | 'excluded';
+    note?: string;
+    by?: string;
+  }) => { ok: boolean; item?: ReviewItem; error?: string };
+
+  /** 从队列里移除一条（已处理的，或误入队的） */
+  'review:remove': (payload: { id: string }) => { ok: boolean; removed: number };
 }
 
 /**

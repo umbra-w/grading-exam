@@ -97,6 +97,34 @@ const api = {
   compareObjective: (payload: Parameters<IPC['objective:compare']>[0]) =>
     invoke('objective:compare', payload),
 
+  /* ---- 复核队列 ---- */
+
+  /**
+   * 读取复核队列（含统计）。
+   *
+   * `stats` 由主进程算，界面**不自己算**：修正率的口径（哪些状态算
+   * "人工下了结论"、`excluded` 算不算分母）必须只有一处定义。
+   * 界面再算一遍就会在边界上分叉，而修正率正是判断模型能不能用的依据。
+   */
+  reviewQueue: () => invoke('review:queue'),
+  reviewCorrect: (payload: Parameters<IPC['review:correct']>[0]) =>
+    invoke('review:correct', payload),
+  reviewVerdict: (payload: Parameters<IPC['review:verdict']>[0]) =>
+    invoke('review:verdict', payload),
+  reviewRemove: (payload: Parameters<IPC['review:remove']>[0]) =>
+    invoke('review:remove', payload),
+
+  /* ---- 连续阅卷（Phase 5）---- */
+  /*
+   * 三个方法都只是 `invoke` 的薄包装。**不要在渲染层直接写通道名**：
+   * 桥刻意不暴露 `invoke`（§4.2），就是为了让通道名只出现在
+   * types.ts 一处——散到多处后改名漏一处就是"点了没反应"的静默 bug。
+   * 本轮接线时我在面板里写了 `gradingExam.invoke(...)`，被 tsc 抓住了。
+   */
+  autoStart: (cfg: Parameters<IPC['auto:start']>[0]) => invoke('auto:start', cfg),
+  autoStop: () => invoke('auto:stop'),
+  autoConfirm: () => invoke('auto:confirm'),
+
   /* ---- AI ---- */
   aiTest: (cfg: Parameters<IPC['ai:test']>[0]) => invoke('ai:test', cfg),
   aiGrade: (payload: Parameters<IPC['ai:grade']>[0]) => invoke('ai:grade', payload),

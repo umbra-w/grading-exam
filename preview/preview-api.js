@@ -237,6 +237,16 @@ window.gradingExam = {
   // 真实实现里这个分支**不给分且要求人工确认**，界面必须能看到它，
   // 否则这个最容易被忽略的分支就永远没被人看过。
   compareObjective: async () => ({
+  /*
+   * 连续阅卷（Phase 5）。预览里这三个方法**只做假响应**：
+   *   · auto:start 返回 ok:true，让面板切到"运行中"的样子
+   *   · auto:stop / auto:confirm 返回 ok:true
+   * 注意：预览**不模拟 evt:progress 推送**，所以"运行中 N 份"
+   * 在预览里会停在 0 份——这是刻意留白，不假装预览能演示进度。
+   */
+  autoStart: async () => ({ ok: true }),
+  autoStop: async () => ({ ok: true }),
+  autoConfirm: async () => ({ ok: true }),
     verdict: 'suspect',
     awarded: false,
     normalized: '碳酸钙的摩尔质量',
@@ -244,6 +254,202 @@ window.gradingExam = {
     reason: '学生填写的是选项内容而非选项字母，无法自动确认对应关系，需人工核对。',
     needsReview: true,
   }),
+
+  /*
+   * ---- 复核队列（P1-8） ----
+   *
+   * 刻意造出**四种状态各一条**，并摆出两个最有价值的边界：
+   *   · corrected：模型分 5 → 当前分 6。界面必须同时显示两个数，否则
+   *     "老师改之前模型给了几分"这个唯一可回溯的证据就看不到了
+   *   · pending 且理由有三条：验证多理由标签与警示的就地显示
+   * 假数据覆盖不到的分支，在预览里永远没人看过。
+   */
+  reviewQueue: async () => ({
+    items: [
+      {
+        id: 'P1::第17题',
+        paperId: 'P1',
+        questionNo: '第17题',
+        subject: '数学',
+        createdAt: Date.now() - 3600000,
+        updatedAt: Date.now() - 1800000,
+        original: {
+          score: 5,
+          comment: '步骤基本完整，单位换算有误',
+          hitPoints: ['列方程', '求解正确'],
+          missedPoints: ['单位换算'],
+          confidence: 0.62,
+          reviewRequested: true,
+          warnings: [],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        effective: {
+          score: 6,
+          comment: '步骤基本完整，单位换算有误',
+          hitPoints: ['列方程', '求解正确', '单位换算'],
+          missedPoints: [],
+          confidence: 0.62,
+          reviewRequested: false,
+          warnings: [],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        reasons: ['low_confidence', 'extreme_score'],
+        status: 'corrected',
+        history: [
+          {
+            at: Date.now() - 1800000,
+            by: '张老师',
+            fromScore: 5,
+            toScore: 6,
+            markedHit: ['单位换算'],
+            markedMissed: [],
+            note: '单位换算正确，应给分',
+          },
+        ],
+        fullScore: 6,
+      },
+      {
+        id: 'P1::第18题',
+        paperId: 'P1',
+        questionNo: '第18题',
+        subject: '数学',
+        createdAt: Date.now() - 600000,
+        updatedAt: Date.now() - 600000,
+        original: {
+          score: 4,
+          comment: '思路方向正确但结论缺失',
+          hitPoints: ['设未知数'],
+          missedPoints: ['列不等式', '得出结论'],
+          confidence: 0.48,
+          reviewRequested: true,
+          warnings: ['score 字段是字符串 "4"，已转换为数字'],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        effective: {
+          score: 4,
+          comment: '思路方向正确但结论缺失',
+          hitPoints: ['设未知数'],
+          missedPoints: ['列不等式', '得出结论'],
+          confidence: 0.48,
+          reviewRequested: true,
+          warnings: ['score 字段是字符串 "4"，已转换为数字'],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        reasons: ['low_confidence', 'output_warnings', 'ensemble_disagreement'],
+        status: 'pending',
+        history: [],
+        fullScore: 8,
+      },
+      {
+        id: 'P1::第19题',
+        paperId: 'P1',
+        questionNo: '第19题',
+        subject: '数学',
+        createdAt: Date.now() - 900000,
+        updatedAt: Date.now() - 300000,
+        original: {
+          score: 3,
+          comment: '仅写出公式',
+          hitPoints: ['写出公式'],
+          missedPoints: ['代入计算'],
+          confidence: 0.88,
+          reviewRequested: false,
+          warnings: [],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        effective: {
+          score: 3,
+          comment: '仅写出公式',
+          hitPoints: ['写出公式'],
+          missedPoints: ['代入计算'],
+          confidence: 0.88,
+          reviewRequested: false,
+          warnings: [],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        reasons: ['model_requested'],
+        status: 'confirmed',
+        history: [
+          {
+            at: Date.now() - 300000,
+            by: '',
+            fromScore: 3,
+            toScore: 3,
+            markedHit: [],
+            markedMissed: [],
+            note: '人工确认模型结果正确',
+          },
+        ],
+        fullScore: 10,
+      },
+      {
+        id: 'P1::第20题',
+        paperId: 'P1',
+        questionNo: '第20题',
+        subject: '数学',
+        createdAt: Date.now() - 1200000,
+        updatedAt: Date.now() - 900000,
+        original: {
+          score: 0,
+          comment: '未作答',
+          hitPoints: [],
+          missedPoints: ['全部'],
+          confidence: 0.55,
+          reviewRequested: true,
+          warnings: [],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        effective: {
+          score: 0,
+          comment: '未作答',
+          hitPoints: [],
+          missedPoints: ['全部'],
+          confidence: 0.55,
+          reviewRequested: false,
+          warnings: [],
+          promptVersion: 'v1',
+          promptHash: 'demo',
+        },
+        reasons: ['extreme_score'],
+        status: 'excluded',
+        history: [
+          {
+            at: Date.now() - 900000,
+            by: '张老师',
+            fromScore: 0,
+            toScore: 0,
+            markedHit: [],
+            markedMissed: [],
+            note: '该生缺考，本题不计入统计',
+          },
+        ],
+        fullScore: 10,
+      },
+    ],
+    stats: {
+      total: 4,
+      pending: 1,
+      corrected: 1,
+      confirmed: 1,
+      excluded: 1,
+      // 1 修正 / (1 修正 + 1 确认) = 0.5
+      correctionRate: 0.5,
+      netScoreDelta: 1,
+    },
+    // 刻意给非零值：验证"队列可能不完整"这条警告在预览里真的会被渲染。
+    // 若恒为 0，这条警告永远没人看过。
+    invalidDropped: 1,
+  }),
+  reviewCorrect: async () => ({ ok: true, warnings: [] }),
+  reviewVerdict: async () => ({ ok: true }),
+  reviewRemove: async () => ({ ok: true, removed: 1 }),
 };
 
 // 让自动化脚本能判断"界面确实水合成功了"，而不是只看截图猜

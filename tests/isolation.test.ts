@@ -42,6 +42,8 @@ const LOCAL_PATH_MODULES = [
   { file: 'src/shared/locator.ts', why: '候选排序：纯打分逻辑' },
   { file: 'src/main/page/geometry.ts', why: '坐标换算：纯数学' },
   { file: 'src/main/page/picker.ts', why: '拾取组装与漂移检测：纯逻辑' },
+  { file: 'src/main/page/autoloop.ts', why: '连续阅卷决策：纯状态机，不得联网' },
+  { file: 'src/main/ai/review.ts', why: '复核队列与人工修正：纯逻辑，不得联网' },
   { file: 'src/main/ai/ensemble.ts', why: '分歧度汇总：聚合已拿到的结果，自身不联网' },
   { file: 'src/main/io/export.ts', why: '导出：把已有数据写盘，不联网' },
 ];
@@ -74,6 +76,27 @@ function stripNoise(src: string): string {
     .replace(/`[^`]*`/g, '``') // 模板串
     .replace(/'(?:[^'\\]|\\.)*'/g, "''")
     .replace(/"(?:[^"\\]|\\.)*"/g, '""');
+}
+
+/**
+ * 取某个 IPC 通道 handler 的**函数体**源码。
+ *
+ * ★ 刻意不依赖缩进与换行：本函数第一版用
+ *   `src.indexOf("ipcMain.handle(\n    'objective:compare'")`，
+ *   后来在同一文件里插入了 4 个新通道，缩进随之改变 → `indexOf` 返回 -1
+ *   → 断言在空字符串上执行 → **永远通过**。测试还在跑、还在绿，
+ *   但它已经不再检查任何东西（AGENTS §6.5）。
+ *
+ * 现在按"通道名 → 下一个 ipcMain.handle"切片，与格式无关。
+ * 调用方仍必须断言取到的内容非空且含预期符号——
+ * 这个函数保证不了"取对了"，只能保证"不依赖排版"。
+ */
+function handlerBodyOf(src: string, channel: string): string {
+  const at = src.indexOf(`'${channel}'`);
+  if (at < 0) return '';
+  const rest = src.slice(at);
+  const next = rest.indexOf('ipcMain.handle', 1);
+  return stripNoise(next > 0 ? rest.slice(0, next) : rest);
 }
 
 describe('P5-2/P5-3 本地确定性路径与 AI/网络隔离', () => {
@@ -111,13 +134,43 @@ describe('P5-2/P5-3 本地确定性路径与 AI/网络隔离', () => {
   it('主进程的 objective:compare handler 体内不含网络/AI 调用', () => {
     // 通道实现最容易在"顺手多做一点"时被污染：比如顺手记个远程埋点
     const src = readFileSync(resolve(ROOT, 'src/main/main.ts'), 'utf8');
-    const at = src.indexOf("ipcMain.handle(\n    'objective:compare'");
-    expect(at).toBeGreaterThan(-1);
-    // 取该 handler 起的一段（到下一个 ipcMain.handle 之前）
-    const rest = src.slice(at);
-    const next = rest.indexOf('ipcMain.handle', 10);
-    const body = stripNoise(next > 0 ? rest.slice(0, next) : rest);
+    const body = handlerBodyOf(src, 'objective:compare');
+
+    // ★ 先断言"确实取到了 handler 体"。
+    // 上一版锚点写死了缩进（`\n    'objective:compare'`），
+    // 插进几个新通道后缩进变了 → indexOf 返回 -1 → 断言在**空字符串**上跑，
+    // 而空字符串永远不含 forbidden 符号 ⇒ 测试看起来在检查，其实什么都没查。
+    // 这正是 AGENTS §6.5「验证器本身必须被验证」的又一例。
+    expect(body.length, '未取到 objective:compare 的 handler 体').toBeGreaterThan(0);
+    expect(body).toContain('compareObjective');
+
     expect(FORBIDDEN.filter((f) => f.pattern.test(body)).map((f) => f.label)).toEqual([]);
+  });
+
+  it('所有 review:* handler 体内不含网络/AI 调用（复核判定必须纯本地）', () => {
+    const src = readFileSync(resolve(ROOT, 'src/main/main.ts'), 'utf8');
+    for (const ch of ['review:queue', 'review:correct', 'review:verdict', 'review:remove']) {
+      const body = handlerBodyOf(src, ch);
+      expect(body.length, `未取到 ${ch} 的 handler 体`).toBeGreaterThan(0);
+      expect(FORBIDDEN.filter((f) => f.pattern.test(body)).map((f) => f.label), ch).toEqual([]);
+    }
+  });
+
+  it('反向验证 handlerBodyOf 真的能抓到污染（否则它可能永远返回空）', () => {
+    const sample = [
+      "ipcMain.handle('a:pure', () => 1);",
+      "ipcMain.handle('b:dirty', async () => {",
+      "  return fetch('https://evil');",
+      '});',
+    ].join('\n');
+    expect(handlerBodyOf(sample, 'a:pure').length).toBeGreaterThan(0);
+    const dirty = handlerBodyOf(sample, 'b:dirty');
+    expect(dirty).toContain('fetch');
+    expect(FORBIDDEN.some((f) => f.pattern.test(dirty))).toBe(true);
+  });
+
+  it('handlerBodyOf 对不存在的通道返回空串（调用方必须自行断言非空）', () => {
+    expect(handlerBodyOf("ipcMain.handle('x', () => 1);", 'nope')).toBe('');
   });
 
   it('反向验证 stripNoise 真的会去掉注释（否则本测试可能假绿）', () => {

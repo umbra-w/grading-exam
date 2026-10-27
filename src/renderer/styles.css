@@ -891,3 +891,54 @@ table.data tbody tr:hover td { background: var(--panel-soft); }
    会让人以为页面出问题了 */
 .empty-state.small { padding: 18px 12px; }
 .empty-state.small .glyph { font-size: 22px; }
+
+/* ------------------------------------------------------ 复核队列（P1-8） */
+
+/*
+ * 复核队列用到的补充类。
+ *
+ * ⚠ 这几个类要单独说明的原因：**未定义的类不会报错**，
+ * 元素静默回退成浏览器默认样式——按钮变成灰白方块、badge 全都长一样，
+ * 而截图里仍然"有内容"、对比度检查也照样过（AGENTS §7.4）。
+ * `pnpm ui:verify` 会断言这里用到的静态类都有定义。
+ *
+ * 配色规则沿用全局约定：`--ok/--warn/--err` 只用于**非文字**
+ * （边框、图标、侧条），文字一律用 `*-text` 变体，否则对比度不达标。
+ */
+
+/* 中性状态标签：用于"极端分数""学科"这类既非警告也非成功的标记。
+   刻意不用 gray 的 #9aa0b4 文字色——那个对比度只有 3.1:1，不到 AA。 */
+.badge.slate { background: #eef0f7; color: var(--text-mid); }
+
+/* 高风险理由标签：图片质量差、客观题可疑 —— 这类错误的代价最高 */
+.badge.red { background: var(--err-soft); color: var(--err-text); }
+
+/* 行内文字按钮：用于卡片右上角的"处理/收起"。
+   它不是主操作，做成实心按钮会和"保存分数"抢注意力。 */
+button.link-btn {
+  border: none;
+  background: none;
+  box-shadow: none;
+  padding: 2px 4px;
+  color: var(--accent-deep);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+button.link-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+button.link-btn:active:not(:disabled) { transform: none; }
+
+/* 可点击的评分点标签。
+   用 badge 外观 + 按钮行为：评分点的"命中/未命中"本身就该用标签表达；
+   加 hover 边框说明它可点，避免看起来只是装饰。 */
+button.badge {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+button.badge:hover:not(:disabled) { border-color: var(--accent-line); }
+button.badge:disabled { cursor: default; }

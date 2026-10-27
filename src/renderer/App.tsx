@@ -7,6 +7,7 @@ import { StatusBar } from './components/StatusBar';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { BrowserPanel } from './panels/BrowserPanel';
 import { SinglePanel } from './panels/SinglePanel';
+import { ReviewPanel } from './panels/ReviewPanel';
 import { PaperPanel } from './panels/PaperPanel';
 import { AnalysisPanel } from './panels/AnalysisPanel';
 
@@ -16,6 +17,8 @@ function CurrentPanel({ page }: { page: PageKey }): JSX.Element {
       return <BrowserPanel />;
     case 'single':
       return <SinglePanel />;
+    case 'review':
+      return <ReviewPanel />;
     case 'paper':
       return <PaperPanel />;
     case 'analysis':

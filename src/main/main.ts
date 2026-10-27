@@ -13,6 +13,7 @@ import type {
   AppSettings,
   AutoGradeConfig,
   BrowserKernel,
+  GradeResult,
   ImagePart,
   LogEntry,
   LogLevel,
@@ -22,11 +23,13 @@ import type {
   TokenUsage,
 } from '../shared/types';
 import {
+  getReviewQueue,
   getStorePath,
   getUsageTotals,
   loadSettings,
   resetUsage,
   saveSettings,
+  setReviewQueue,
 } from './store';
 import {
   EMPTY_USAGE,
@@ -37,15 +40,93 @@ import {
   visionAnswers,
 } from './ai/client';
 import { PlatformBrowser } from './page/browser';
+  import { AutoRunner } from './page/auto-runner';
 import { parseFile, toIpcResult } from './io/parse';
 import { exportExcel, exportMarkdown } from './io/export';
 import { compareObjective } from '../shared/objective';
+import {
+  applyManualCorrection,
+  applyManualVerdict,
+  compactQueue,
+  enqueueIfNeeded,
+  explainReasons,
+  partitionQueue,
+  queueStats,
+  signalsFromResult,
+  sortQueue,
+  type ReviewItem,
+} from './ai/review';
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 /** 阅卷窗口管理器；窗口与 CDP 会话在其内部维护 */
 let platform: PlatformBrowser;
+
+/* ------------------------------------------------------- 复核队列接入 */
+
+/**
+ * 把一份评分结果按需入复核队列并落盘。
+ *
+ * 为什么单独抽出来：入队有两件事必须**同时**发生——
+ * 内存/磁盘里有这条记录，以及日志里说的和实际做的一致。
+ * 拆开写就会出现"日志说已入队、队列里没有"的老问题。
+ *
+ * @returns `added` 表示**本次确实新入了队**（用于日志措辞）；
+ *          `item` 是入队后的条目（无论新旧），未入队时为 null。
+ */
+function pushToReviewQueue(
+  result: GradeResult,
+  fullScore: number,
+  ctx: { paperId: string; questionNo: string; subject: string },
+): { added: boolean; item: ReviewItem | null } {
+  try {
+    const item = enqueueIfNeeded(result, {
+      ...ctx,
+      fullScore,
+      signals: signalsFromResult(result),
+    });
+    if (!item) return { added: false, item: null };
+
+    const { items: queue } = readReviewQueue();
+    const exists = queue.some((x) => x.id === item.id);
+    // 已存在时不重复插入：重复条目会让老师对同一题复核两次
+    const next = exists ? queue : [...queue, item];
+    // 每次入队顺手压缩，避免长期使用后队列无限增长。
+    // 丢掉的**只可能是已处理且超期的**条目（compactQueue 保证 pending 永不丢）。
+    const { queue: compacted, dropped } = compactQueue(next);
+    setReviewQueue(compacted);
+    if (dropped > 0) {
+      pushLog('info', `复核队列已清理 ${dropped} 条超期的已处理记录（待复核的不会被清理）。`);
+    }
+    return { added: !exists, item };
+  } catch (err) {
+    // 入队失败必须显式说出来。**绝不能吞掉**——
+    // 吞掉就等于"低置信度分数没人管"，而这正是这一层要防的事。
+    pushLog('error', `入复核队列失败（该分数未进入复核，请人工核对）：${(err as Error)?.message}`);
+    return { added: false, item: null };
+  }
+}
+
+/**
+ * 读出复核队列，并统计**结构已损坏**的条目数。
+ *
+ * 校验逻辑在 `review.ts` 的 `isValidReviewItem`（纯函数，有单测）。
+ * 这里只负责读、校验、并按需要上报——
+ * 手写一遍判类型代码就会与那边分叉，而分叉的后果是
+ * "这边认为可用、那边认为损坏"，同一份数据两种结论。
+ */
+function readReviewQueue(): { items: ReviewItem[]; invalid: number } {
+  const { items, invalid } = partitionQueue(getReviewQueue());
+  if (invalid > 0) {
+    pushLog(
+      'warn',
+      `复核队列里有 ${invalid} 条记录结构损坏，已隐藏（其余 ${items.length} 条正常）。` +
+        `这意味着可能有分数没能进入复核，请人工核对最近的评分结果。`,
+    );
+  }
+  return { items, invalid };
+}
 
 /* ------------------------------------------------------------ 日志推送 */
 
@@ -250,19 +331,213 @@ function registerIpc(): void {
     },
   );
 
+  /* --------------------------------------------------------- 复核队列 */
+
+  ipcMain.handle('review:queue', () => {
+    const { items: all, invalid } = readReviewQueue();
+
+    // 顺手压缩：读取是最自然的时机，且不会漏掉任何一次入队后的清理
+    const { queue, dropped } = compactQueue(all);
+    if (dropped > 0) {
+      setReviewQueue(queue);
+      pushLog('info', `复核队列已清理 ${dropped} 条超期的已处理记录。`);
+    }
+
+    return {
+      // 列表按"最该先看的排前面"排序：待处理 → 理由多 → 置信度低 → 更早入队
+      items: sortQueue(queue),
+      stats: queueStats(queue),
+      // 损坏条数由 readReviewQueue 统一上报（它已经打过日志），
+      // 这里原样带回给界面，让用户能看到"队列可能不完整"
+      invalidDropped: invalid,
+    };
+  });
+
+  ipcMain.handle('review:correct', (_e, payload) => {
+    const { items: queue } = readReviewQueue();
+    const idx = queue.findIndex((x) => x.id === payload.id);
+    if (idx < 0) return { ok: false, warnings: [], error: '该条目不在复核队列里（可能已被处理）' };
+
+    const { item, warnings } = applyManualCorrection(queue[idx]!, {
+      ...(payload.score === undefined ? {} : { score: payload.score }),
+      ...(payload.markHit === undefined ? {} : { markHit: payload.markHit }),
+      ...(payload.markMissed === undefined ? {} : { markMissed: payload.markMissed }),
+      ...(payload.pointScores === undefined ? {} : { pointScores: payload.pointScores }),
+      ...(payload.note === undefined ? {} : { note: payload.note }),
+      ...(payload.by === undefined ? {} : { by: payload.by }),
+    });
+
+    // 警示要同时进日志与返回值：日志留痕，返回值让界面能就地显示
+    for (const w of warnings) pushLog('warn', `人工修正提醒：${w}`);
+
+    const changed = item !== queue[idx]!;
+    if (changed) {
+      const next = [...queue];
+      next[idx] = item;
+      setReviewQueue(next);
+      pushLog(
+        'ok',
+        `已修正复核项「${item.questionNo}」：${queue[idx]!.effective.score} → ${item.effective.score}` +
+          (payload.note ? `（${payload.note}）` : ''),
+      );
+    } else {
+      pushLog('info', `复核项「${queue[idx]!.questionNo}」未发生实际改动。`);
+    }
+
+    return { ok: true, item, warnings };
+  });
+
+  ipcMain.handle('review:verdict', (_e, payload) => {
+    const { items: queue } = readReviewQueue();
+    const idx = queue.findIndex((x) => x.id === payload.id);
+    if (idx < 0) return { ok: false, error: '该条目不在复核队列里（可能已被处理）' };
+
+    const item = applyManualVerdict(queue[idx]!, payload.status, {
+      ...(payload.note === undefined ? {} : { note: payload.note }),
+      ...(payload.by === undefined ? {} : { by: payload.by }),
+    });
+    const next = [...queue];
+    next[idx] = item;
+    setReviewQueue(next);
+    pushLog(
+      'info',
+      `复核项「${item.questionNo}」标记为${payload.status === 'confirmed' ? '已确认' : '不参与评分'}。`,
+    );
+    return { ok: true, item };
+  });
+
+  ipcMain.handle('review:remove', (_e, payload) => {
+    const { items: queue } = readReviewQueue();
+    const before = queue.length;
+    // 待处理的条目不允许直接删：删掉就等于一个可疑分数没人看，
+    // 而且不会留下任何记录。想让它消失必须先下结论（确认或排除）。
+    const target = queue.find((x) => x.id === payload.id);
+    if (target && target.status === 'pending') {
+      pushLog('warn', '待复核的条目不能直接删除，请先「确认无误」或「不参与评分」。');
+      return { ok: false, removed: 0 };
+    }
+    const next = queue.filter((x) => x.id !== payload.id);
+    setReviewQueue(next);
+    const removed = before - next.length;
+    if (removed > 0) pushLog('info', `已从复核队列移除 ${removed} 条已处理记录。`);
+    return { ok: true, removed };
+  });
+
   // Phase 1：AI 通道已实现（client.ts）。
   registerAIHandlers();
 
   // Phase 2：阅卷窗口与拾取通道已实现（page/browser.ts + page/picker.ts）。
   registerBrowserHandlers();
 
-  // auto:*（连续阅卷状态机）仍未实现，明确报未实现而不是静默返回假数据
-  for (const channel of ['auto:start', 'auto:stop', 'auto:confirm'] as const) {
-    ipcMain.handle(channel, () => {
-      pushLog('warn', `${channel} 尚未实现（Phase 5：连续阅卷状态机）`);
-      return { ok: false, error: 'Phase 5 未实现' };
-    });
-  }
+  // Phase 5：连续阅卷的执行层。
+  // 判定逻辑已在纯模块里单测（auto-orchestrator 28 项 / autoloop 37 项 /
+  // geometry 66 项）；这里只做"装配"，但**依赖真实 CDP，本机无法验证**。
+  registerAutoHandlers();
+}
+
+/**
+ * 注册连续阅卷的执行层通道（Phase 5）。
+ *
+ * ⚠ 验证状态：装配逻辑本机可编译、可对账，但**跑不到真机验证**——
+ * 它与 `browser.ts`/`cdp.ts` 一样依赖真实 BrowserWindow（BLOCKERS.md B3）。
+ * 因此这里的诚实纪律是：
+ *   · 任何前置条件不满足（窗口没开、被拒绝、已有运行中）就**明确报错**，
+ *     不假装跑起来了
+ *   · 不用假数据兜底，不用"看起来像是在跑"的进度
+ *   · 审计与拒绝的记录都会写日志，方便真机调试时回溯
+ */
+let autoRunner: AutoRunner | null = null;
+
+function registerAutoHandlers(): void {
+  ipcMain.handle('auto:start', async (_e, cfg: AutoGradeConfig) => {
+    if (!cfg || typeof cfg !== 'object') {
+      pushLog('warn', 'auto:start 参数不合法，已拒绝。');
+      return { ok: false, error: '参数不合法' };
+    }
+    if (!platform?.isOpen()) {
+      pushLog('warn', '连续阅卷启动失败：阅卷窗口未打开。');
+      return { ok: false, error: '请先打开阅卷窗口' };
+    }
+    if (autoRunner?.isRunning()) {
+      pushLog('warn', '连续阅卷已在运行中，本次启动被忽略。');
+      return { ok: false, error: '已在运行中' };
+    }
+
+    /*
+     * 开工前查一次漂移：平台改版后坐标全部失效，若不做这一步，
+     * 失败会表现为"点击没反应"，而原因看起来像"平台卡了"，
+     * 排查方向被带偏。
+     *
+     * `checkDrift()` 返回 `DriftReport | null`，null 表示**无从判断**
+     *（没拾取过 / 拿不到当前指纹）。此时刻意**不拦**启动，但必须
+     * 把"这次没做漂移检查"说清楚——静默通过会让人以为检查过了。
+     */
+    const drift = await platform.checkDrift();
+    if (drift === null) {
+      pushLog('info', '本次未做页面结构漂移检查（无历史指纹可比对），运行中若点击无效应优先怀疑平台改版。');
+    } else if (drift.changed) {
+      const detail = drift.details?.join('；') ?? '页面结构与拾取时不一致';
+      pushLog('warn', `连续阅卷未启动：${detail}`);
+      if (drift.action) pushLog('info', drift.action);
+      return { ok: false, error: '页面结构已变化，请重新拾取后再启动' };
+    }
+
+    const settings = loadSettings();
+    const runner = new AutoRunner(
+      platform,
+      cfg,
+      {
+        log: (level, msg) => pushLog(level, msg),
+        progress: (p) => {
+          mainWindow?.webContents.send('evt:progress', {
+            running: p.running,
+            handled: p.handled,
+            current: p.current,
+            lastScore: p.lastScore ?? 0,
+          });
+        },
+        awaitConfirm: (payload) => mainWindow?.webContents.send('evt:awaitConfirm', payload),
+        finished: (outcome) => {
+          pushLog(
+            outcome.kind === 'error' ? 'error' : 'ok',
+            `连续阅卷结束：${outcome.kind}，处理 ${outcome.handled} 份，提交 ${outcome.submitted} 份。`,
+          );
+          if (outcome.kind === 'error') {
+            pushLog('warn', `结束原因：${outcome.error ?? '未知'}`);
+          }
+          autoRunner = null;
+        },
+      },
+      settings.ai,
+    );
+    autoRunner = runner;
+
+    pushLog(
+      'info',
+      `连续阅卷启动：${cfg.mode === 'top' ? '无人值守（自动填分+自动提交）' : cfg.mode === 'steady' ? '稳健（逐份确认，不自动提交）' : '仅评分（不填分）'}模式。`,
+    );
+    // 刻意不 await：一轮可能跑几十分钟，阻塞 IPC 会让整个界面卡死
+    void runner.run();
+    return { ok: true };
+  });
+
+  ipcMain.handle('auto:stop', () => {
+    if (!autoRunner) {
+      // 没有在跑却说"已停止"会让老师以为停掉了某个正在跑的任务
+      pushLog('info', '当前没有正在运行的连续阅卷。');
+      return { ok: false };
+    }
+    autoRunner.stop();
+    return { ok: true };
+  });
+
+  ipcMain.handle('auto:confirm', () => {
+    if (!autoRunner) {
+      pushLog('warn', '当前没有正在运行的连续阅卷，确认被忽略。');
+      return { ok: false };
+    }
+    return { ok: autoRunner.confirm() };
+  });
 }
 
 /**
@@ -448,10 +723,28 @@ function registerAIHandlers(): void {
       const r = outcome.result;
       for (const w of r.warnings) pushLog('warn', `评分输出已修正：${w}`);
 
+      // 复核队列：**先真的入队，再说"已入队"**。
+      // 此前这里直接写「（已入复核队列）」而队列并不存在——
+      // 日志声称做了没做的事，用户看到就放心了，低置信度分数直接生效。
+      const reviewOutcome = pushToReviewQueue(r, fullScore, {
+        // ⚠ `ai:grade` 的 payload 里既**没有** paperId 也**没有** questionNo
+        // （`AutoGradeConfig['question']` 只有 stem/fullScore/referenceAnswer/
+        // scoringPoints/subject）。单题评分接口本来就不知道自己在哪张卷子里。
+        //
+        // 所以用**题干前 24 字**做题目标识，而不是编一个看起来像真的编号：
+        // 同一个题干重复评分会被认成同一条（去重正确），
+        // 而界面上一眼能看出是哪道题。
+        paperId: '',
+        questionNo: q?.stem ? q.stem.slice(0, 24) : '(无题干)',
+        subject: q?.subject ?? '',
+      });
+
       pushLog(
-        r.reviewRequested ? 'warn' : 'ok',
+        r.reviewRequested || reviewOutcome.added ? 'warn' : 'ok',
         `评分完成：${r.score}/${fullScore}，置信度 ${r.confidence.toFixed(2)}` +
-          (r.reviewRequested ? '（已入复核队列）' : ''),
+          (reviewOutcome.added
+            ? `（已入复核队列：${explainReasons(reviewOutcome.item!.reasons).join('、')}）`
+            : ''),
       );
 
       // 返回值里带上结构化结果，供渲染层直接渲染得分点/失分点

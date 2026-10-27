@@ -6,7 +6,7 @@
  *   本文件只负责「页内观测」—— 生成稳定选择器、算出元素在**本 frame 视口**内的坐标。
  *   「frame 偏移累加」与「顶层坐标换算」由主进程 picker.ts 负责（那里才有 frameTree）。
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 type PickKind = 'questionRegion' | 'scoreInput' | 'submitButton';
 
@@ -22,6 +22,17 @@ interface PagePick {
   text: string;
   /** 按韧性排序的选择器候选（何者为最优由 locator.ts 判定） */
   candidates?: Array<{ kind: string; selector: string; score: number }>;
+  /**
+   * 本 frame 的 routingId（= `webFrame.routingId`）。
+   *
+   * 为什么页面侧要带上它：framePath（从顶层到自己经过的序号路径）
+   * **页面侧算不出来**——它只看得到自己，看不到自己在树里的位置。
+   *
+   * 注意主进程**不依赖**这个字段定位 frame：它用 `IpcMainEvent.frameId`
+   * （Electron 文档保证两者相等，且前者是权威来源）。
+   * 这里附带一份是为了诊断——两边不等时说明有地方理解错了。
+   */
+  frameId?: number;
 }
 
 let pickingKind: PickKind | null = null;
@@ -141,6 +152,10 @@ function onClick(e: MouseEvent): void {
     height: r.height,
     tag: el.tagName.toLowerCase(),
     text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    // 附带本 frame 的 routingId 供主进程交叉参考。
+    // 主进程定位 frame **不靠它**（靠 IpcMainEvent.frameId，那才是权威来源）；
+    // 页面侧无法知道自己 framePath，别让它猜。
+    ...(typeof webFrame.routingId === 'number' ? { frameId: webFrame.routingId } : {}),
   };
 
   flashPicked(el);

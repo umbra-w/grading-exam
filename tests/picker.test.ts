@@ -15,6 +15,7 @@ import {
   diffFingerprint,
   fingerprintOf,
   labelOf,
+  profileKeyForUrl,
   type PickContext,
   type RawPagePick,
   type PickProfile,
@@ -219,14 +220,107 @@ describe('validatePick', () => {
   });
 });
 
-describe('validatePickSet', () => {
-  it('★ 缺分数框或提交按钮 → 不 ready', () => {
-    const r = validatePickSet({ questionRegion: pick({ kind: 'questionRegion' }) }, VP);
-    expect(r.ready).toBe(false);
-    expect(r.problems.filter((p) => p.code === 'PICK_MISSING')).toHaveLength(2);
+describe('profileKeyForUrl（拾取档案的存储 key）', () => {
+  it('★ 去掉 query 与 hash —— 否则每次进入都是新 key，恢复永远命中不了', () => {
+    const a = profileKeyForUrl('https://p.example/grade?taskId=1&_t=111#q3');
+    const b = profileKeyForUrl('https://p.example/grade?taskId=2&_t=999#q7');
+    expect(a).toBe(b);
+    expect(a).toBe('https://p.example/grade');
   });
 
-  it('★ 缺题目区域不算错误（只影响截图范围）', () => {
+  it('★ 保留 path —— 同源不同页面必须分开', () => {
+    const a = profileKeyForUrl('https://p.example/grade/taskA');
+    const b = profileKeyForUrl('https://p.example/grade/taskB');
+    expect(a).not.toBe(b);
+  });
+
+  it('不同源必须分开', () => {
+    expect(profileKeyForUrl('https://a.example/x')).not.toBe(profileKeyForUrl('https://b.example/x'));
+  });
+
+  it('端口与协议算作不同来源', () => {
+    expect(profileKeyForUrl('http://p.example/x')).not.toBe(profileKeyForUrl('https://p.example/x'));
+    expect(profileKeyForUrl('https://p.example:8443/x')).not.toBe(
+      profileKeyForUrl('https://p.example/x'),
+    );
+  });
+
+  it('非法/特殊 URL 退化成原串，而不是全部塌到同一个 key', () => {
+    // 若失败分支返回 ''，所有 about:blank 类页面会共用一个档案 —— 危险。
+    // 另注：`new URL('about:blank')` 不抛错，origin 会是字符串 'null'，
+    // 实现必须显式处理（这是本测试第一版抓到的真实缺陷）。
+    const a = profileKeyForUrl('about:blank');
+    const b = profileKeyForUrl('not a url at all');
+    const c = profileKeyForUrl('blob:https://p.example/abc');
+    expect(a).toBe('about:blank');
+    expect(a).not.toBe(b);
+    expect(a).not.toBe('');
+    expect(a).not.toBe(c);
+    for (const k of [a, b, c]) expect(k.startsWith('null')).toBe(false);
+  });
+
+  it('根路径的 key 形如 origin + "/"', () => {
+    expect(profileKeyForUrl('https://p.example')).toBe('https://p.example/');
+  });
+});
+
+describe('validatePickSet', () => {
+  it('★ 缺分数框 → 不 ready（分数框是唯一必填）', () => {
+    const r = validatePickSet({ questionRegion: pick({ kind: 'questionRegion' }) }, VP);
+    expect(r.ready).toBe(false);
+    const missing = r.problems.filter((p) => p.code === 'PICK_MISSING');
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.kind).toBe('scoreInput');
+  });
+
+  it('★ 缺提交按钮**不算错误**（提交按钮可选，SPEC 要求）', () => {
+    const r = validatePickSet({ scoreInput: pick({ kind: 'scoreInput' }) }, VP);
+    expect(r.ready).toBe(true);
+    expect(r.problems.some((p) => p.level === 'error')).toBe(false);
+  });
+
+  it('★ 缺提交按钮 → submitMode 为 platform（软件不代提交）', () => {
+    const r = validatePickSet({ scoreInput: pick({ kind: 'scoreInput' }) }, VP);
+    expect(r.submitMode).toBe('platform');
+  });
+
+  it('★ 缺提交按钮时必须给出一条 info，明确告知不会代为提交', () => {
+    // 静默地"不提交"和静默地"提交"一样危险：用户以为点过了
+    const r = validatePickSet({ scoreInput: pick({ kind: 'scoreInput' }) }, VP);
+    const info = r.problems.find((p) => p.code === 'SUBMIT_BY_PLATFORM');
+    expect(info, '缺少「由平台提交」的提示').toBeDefined();
+    // 窄化后再读 action（PickProblem 是判别联合，ok 分支没有 action 字段）
+    if (info && info.level !== 'ok') {
+      expect(info.level).toBe('info');
+      expect(info.action).toMatch(/不会|只填分|不点提交/);
+    } else {
+      throw new Error(`提示的 level 应为 info，实际为 ${info?.level}`);
+    }
+  });
+
+  it('★ 有提交按钮 → submitMode 为 software（软件代点提交）', () => {
+    const r = validatePickSet(
+      { scoreInput: pick({ kind: 'scoreInput' }), submitButton: pick({ kind: 'submitButton' }) },
+      VP,
+    );
+    expect(r.ready).toBe(true);
+    expect(r.submitMode).toBe('software');
+  });
+
+  it('★ 提交按钮存在但坐标越界 → 不 ready，且 submitMode 退回 platform', () => {
+    // 一个坏掉的提交按钮不能算"有提交按钮"：软件会点到别处
+    const r = validatePickSet(
+      {
+        scoreInput: pick({ kind: 'scoreInput' }),
+        submitButton: pick({ kind: 'submitButton', topX: 5000 }),
+      },
+      VP,
+    );
+    expect(r.ready).toBe(false);
+    expect(r.submitMode).toBe('platform');
+  });
+
+  it('缺题目区域不算错误（只影响截图范围）', () => {
     const r = validatePickSet(
       { scoreInput: pick({ kind: 'scoreInput' }), submitButton: pick({ kind: 'submitButton' }) },
       VP,
@@ -245,9 +339,10 @@ describe('validatePickSet', () => {
       VP,
     );
     expect(r.ready).toBe(true);
+    expect(r.submitMode).toBe('software');
   });
 
-  it('任一越界 → 不 ready', () => {
+  it('分数框越界 → 不 ready', () => {
     const r = validatePickSet(
       {
         scoreInput: pick({ kind: 'scoreInput', topX: 5000 }),

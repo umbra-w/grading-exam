@@ -210,6 +210,17 @@ describe('classifyError —— 决定「中断整轮」还是「只告警」', (
   });
 
   it('未拾取 → PICK_MISSING', () => {
+    /*
+     * 下面两条是**实测**倒逼出来的：`AutoErrorKind` 联合类型里声明了 11 个
+     * kind，而 ERROR_RULES 只覆盖了 8 个。缺的那两个不是没人用的死类型——
+     * VALUE_UNREADABLE 是"回读不到值/写入未生效"的正确归类，
+     * 与 VALUE_MISMATCH（值填错了）处置完全不同：前者要重新拾取元素，
+     * 后者要检查归一化。全落到 UNKNOWN 后处置建议只剩"请附日志排查"。
+     */
+    expect(classifyError('VALUE_UNREADABLE: 回读不到值').kind).toBe('VALUE_UNREADABLE');
+    expect(classifyError('元素不存在，回读不到').kind).toBe('VALUE_UNREADABLE');
+    expect(classifyError('ELEMENT_NOT_FOUND: 目标元素消失').kind).toBe('ELEMENT_NOT_FOUND');
+    expect(classifyError('元素已从 DOM 移除').kind).toBe('ELEMENT_NOT_FOUND');
     expect(classifyError('scoreInput 未拾取').kind).toBe('PICK_MISSING');
     expect(classifyError('PICK_MISSING').kind).toBe('PICK_MISSING');
   });
