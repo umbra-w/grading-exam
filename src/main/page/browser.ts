@@ -56,6 +56,15 @@ export class PlatformBrowser {
   constructor(
     private readonly onLog: (level: 'info' | 'ok' | 'warn' | 'error', msg: string) => void,
     private readonly onPick: (r: PickResult) => void,
+    /**
+     * 窗口被**用户手动关闭**时回调（不含我们主动调 close()）。
+     *
+     * 为什么需要它：`evt:browserClosed` 此前声明在 IPC 契约里、preload 也订阅了，
+     * 但主进程**从来不发送**——于是用户关掉阅卷窗口后，界面永远显示"窗口已打开"，
+     * 点拾取却报"请先打开阅卷窗口"。契约里有而无人发送的事件，
+     * 是一种不会报错的谎言。
+     */
+    private readonly onWindowClosed?: () => void,
   ) {}
 
   getState(): BrowserState {
@@ -120,10 +129,13 @@ export class PlatformBrowser {
       this.state = { ...this.state, open: true, url, kernel, picks: {}, fingerprint: '' };
 
       win.on('closed', () => {
+        const wasOpen = this.state.open;
         this.state = { ...this.state, open: false, pendingPick: null };
         this.cdp?.detach();
         this.cdp = null;
         this.win = null;
+        // 只在"确实曾经打开着"时通知，避免初始化阶段发出无意义的事件
+        if (wasOpen) this.onWindowClosed?.();
       });
 
       // ⚠ 未验证：viewer preload 通过 ipcRenderer 上报，主进程需在此挂监听。

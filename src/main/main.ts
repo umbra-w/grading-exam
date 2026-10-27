@@ -1,8 +1,8 @@
 /**
- * 主进程入口 —— Phase 0 骨架。
+ * 主进程入口。
  *
- * 本阶段目标：应用能启动、设置能读写、IPC 能通、日志面板能收到推送。
- * 不含：CDP 自动化（Phase 2）、AI 调用（Phase 1）、解析导出（Phase 4~6）。
+ * 职责：应用启动、窗口、IPC 路由、日志推送。
+ * 重活都在子模块里：AI（ai/client.ts）、自动化（page/*）、解析导出（io/*）。
  */
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,8 @@ import type {
   ImagePart,
   LogEntry,
   LogLevel,
+  PaperReport,
+  ParseResult,
   PickKind,
   TokenUsage,
 } from '../shared/types';
@@ -35,6 +37,9 @@ import {
   visionAnswers,
 } from './ai/client';
 import { PlatformBrowser } from './page/browser';
+import { parseFile, toIpcResult } from './io/parse';
+import { exportExcel, exportMarkdown } from './io/export';
+import { compareObjective } from '../shared/objective';
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
 
@@ -147,6 +152,104 @@ function registerIpc(): void {
     return { canceled: res.canceled, path: res.filePaths[0] ?? '' };
   });
 
+  // Phase 4：文件解析与导出。
+  // parseFile 内部不抛异常（所有失败都是结构化返回），这里再兜一层——
+  // 真出意外时返回可读原因，好过让异常穿过 IPC 变成渲染层的一句英文堆栈。
+  ipcMain.handle('io:parseFile', async (_e, filePath: string): Promise<ParseResult> => {
+    if (typeof filePath !== 'string' || filePath.trim() === '') {
+      return {
+        ok: false,
+        name: '',
+        ext: '',
+        code: 'READ_FAILED',
+        message: '没有收到文件路径。请重新选择文件。',
+      };
+    }
+    try {
+      const r = await parseFile(filePath);
+      if (r.ok) {
+        pushLog(
+          'info',
+          `解析成功：${r.name}，${r.charCount} 字` +
+            (r.pageCount ? `，${r.pageCount} 页` : '') +
+            (r.warnings.length ? `，${r.warnings.length} 条警告` : ''),
+        );
+        // 警告要进日志：用户可能不看界面提示，但日志里必须留痕
+        for (const w of r.warnings) pushLog('warn', `${r.name}：${w.message}`);
+      } else {
+        pushLog('warn', `解析失败（${r.code}）：${r.name} — ${r.message}`);
+      }
+      return toIpcResult(r);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      pushLog('error', `解析异常：${msg}`);
+      return { ok: false, name: '', ext: '', code: 'PARSE_FAILED', message: `解析时发生意外：${msg}` };
+    }
+  });
+
+  ipcMain.handle(
+    'io:exportExcel',
+    async (_e, payload: { report: PaperReport; outPath: string }) => {
+      try {
+        const path = await exportExcel(payload.report, payload.outPath);
+        pushLog('ok', `已导出 Excel：${path}`);
+        return { ok: true, path };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        pushLog('error', `导出 Excel 失败：${msg}`);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'io:exportMarkdown',
+    async (_e, payload: { report: PaperReport; outPath: string }) => {
+      try {
+        const path = await exportMarkdown(payload.report, payload.outPath);
+        pushLog('ok', `已导出 Markdown：${path}`);
+        return { ok: true, path };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        pushLog('error', `导出 Markdown 失败：${msg}`);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  /*
+   * 客观题本地比对。
+   *
+   * 这里**刻意不产生任何日志、不消耗任何 token、不发起网络请求**——
+   * 它必须是纯计算。P5-2 的验收就是断言这条路径零网络。
+   * 若将来有人在里面加了联网/打点的调用，那条断言会立刻变红。
+   */
+  ipcMain.handle(
+    'objective:compare',
+    (
+      _e,
+      payload: {
+        student: string;
+        expected: string;
+        acceptable?: string[];
+        optionText?: Record<string, string>;
+      },
+    ) => {
+      const r = compareObjective(payload.student, payload.expected, {
+        ...(payload.acceptable === undefined ? {} : { acceptable: payload.acceptable }),
+        ...(payload.optionText === undefined ? {} : { optionText: payload.optionText }),
+      });
+      return {
+        verdict: r.verdict,
+        awarded: r.awarded,
+        normalized: r.normalized,
+        expected: r.expected,
+        reason: r.reason,
+        needsReview: r.needsReview,
+      };
+    },
+  );
+
   // Phase 1：AI 通道已实现（client.ts）。
   registerAIHandlers();
 
@@ -175,6 +278,12 @@ function registerBrowserHandlers(): void {
     (pick) => {
       // 拾取结果推给渲染层，面板据此把按钮变绿并显示坐标
       mainWindow?.webContents.send('evt:pick', pick);
+    },
+    () => {
+      // 用户手动关掉阅卷窗口：必须通知渲染层，
+      // 否则面板会一直显示"窗口已打开"，而点拾取又报"请先打开窗口"
+      pushLog('warn', '阅卷窗口已被用户关闭。');
+      mainWindow?.webContents.send('evt:browserClosed');
     },
   );
 

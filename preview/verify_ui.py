@@ -49,9 +49,28 @@ EDGE_CANDIDATES = [
 ]
 
 # 每个面板「渲染成功」的证据。缺任意一项即判失败。
+#
+# ⚠ 面板实现后**必须同步改这里**：single 面板实现之前，这里断言的是
+# "待实现清单"；实现之后如果忘了改，断言会直接假红（好），
+# 但如果反过来——把已实现的面板仍断言成占位页——就会掩盖真问题（坏）。
 PANEL_EXPECT: dict[str, list[str]] = {
     "browser": ["阅卷平台", "元素拾取", "评分标准", "批阅模式与运行", "pick-slot", "mode-card"],
-    "single": ["智能阅卷", "待实现清单", "empty-state", "Phase 4"],
+    # 单题批改（Phase 4）已实现：断言真实功能点。
+    #
+    # ⚠ 只断言"两种题型下都必然出现"的元素。曾经在这里断言了「备选答案」，
+    # 但那是客观题分支才有的字段，而默认题型是「计算」（主观题）——
+    # 断言写错了，不是界面坏了。断言必须挑恒在的锚点，否则会假红。
+    "single": [
+        "智能阅卷",
+        "评分标准",
+        "本地比对",
+        "AI 评分",
+        "满分",
+        "segmented",
+        "学生答案",
+        "参考答案",
+        "得分点",
+    ],
     "paper": ["整卷阅卷", "待实现清单", "empty-state", "Phase 5"],
     "analysis": ["学情分析", "待实现清单", "empty-state", "Phase 6"],
     "settings": ["设置", "供应商", "导出目录", "自动"],
@@ -283,6 +302,84 @@ def check_screenshot(path: Path) -> list[str]:
     return problems
 
 
+# ------------------------------------------------------- 样式类存在性检查
+
+
+def collect_used_classes(src_dir: Path) -> dict[str, set[str]]:
+    """
+    扫 TSX，提取所有**静态字符串** className 里的类名 → 记录来源文件。
+
+    只看静态字符串：动态拼接（`className={cond ? 'a' : 'b'}`）无法静态求解，
+    这里不假装能。用模板/三元表达式的类名需要单独确认——
+    宁可漏检，也不要用一个猜出来的结果冒充检查结果。
+    """
+    used: dict[str, set[str]] = {}
+    # 只匹配 className="..." / className='...'，且内容不以 { 开头
+    pattern = re.compile(r"""\bclassName\s*=\s*["']([^"'{][^"']*)["']""")
+    for path in sorted(src_dir.rglob("*.tsx")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for m in pattern.finditer(text):
+            for cls in m.group(1).split():
+                used.setdefault(cls, set()).add(path.name)
+    return used
+
+
+def defined_css_classes(css_text: str) -> set[str]:
+    """
+    从 CSS 里提取**已定义**的类名集合。
+
+    必须先提取成集合再比对，而不是对每个类名做一次子串搜索——
+    子串搜索会假绿：查 `.name` 时被 `.kernel-label` 里的片段命中，
+    于是"未定义的类"被判定为已定义。这类假绿比不检查更危险。
+    """
+    no_comments = re.sub(r"/\*.*?\*/", "", css_text, flags=re.S)
+    # CSS 标识符允许字母数字、连字符、下划线；这里够用且不会跨选择器误配
+    return set(re.findall(r"\.([A-Za-z_][\w-]*)", no_comments))
+
+
+def check_css_classes(src_dir: Path, css_path: Path) -> list[str]:
+    """
+    断言 TSX 用到的每个静态样式类都真的在 styles.css 里定义过。
+
+    为什么需要这条：写了 `className="segmented"` 而 CSS 里没有这个类，
+    **不会报任何错**——元素回退成浏览器默认样式：按钮变成灰白方块、
+    并排字段竖着堆。截图仍然"有内容"，对比度检查也照样通过，
+    于是这个缺陷可以一路活到用户手上。
+
+    这类问题在手写 CSS 的项目里必然反复出现（没有 CSS Module 的编译期保障），
+    所以把它做成断言而不是靠人记得。
+    """
+    problems: list[str] = []
+    if not css_path.exists():
+        return [f"找不到样式文件：{css_path}"]
+
+    defined = defined_css_classes(css_path.read_text(encoding="utf-8", errors="replace"))
+    used = collect_used_classes(src_dir)
+    print(f"\n── 样式类存在性（TSX 用了 {len(used)} 个，CSS 定义了 {len(defined)} 个）")
+
+    # 这两个是状态类，通常与其他类联合使用，允许没有独立定义
+    allowlist = {"active", "disabled"}
+
+    missing: dict[str, set[str]] = {}
+    for cls, sources in sorted(used.items()):
+        if cls in allowlist or cls in defined:
+            continue
+        missing[cls] = sources
+
+    if missing:
+        print(f"  ✗ 有 {len(missing)} 个类在 styles.css 里没有定义：")
+        for cls, sources in missing.items():
+            print(f"      .{cls:<16} ← {', '.join(sorted(sources))}")
+        problems.append(
+            f"{len(missing)} 个样式类未定义（{', '.join(sorted(missing))}）："
+            f"元素会回退成浏览器默认样式，界面能显示但不可用"
+        )
+    else:
+        print(f"  ✓ 全部 {len(used)} 个类都有定义")
+
+    return problems
+
+
 # ------------------------------------------------------------ 浏览器渲染
 
 def find_browser() -> str | None:
@@ -400,7 +497,13 @@ def main() -> int:
     v = parse_css_vars(CSS.read_text(encoding="utf-8"))
     print(f"从 {CSS.name} 读到 {len(v)} 个设计令牌")
 
-    problems = check_contrast(v) + check_palette(v)
+    # 样式类存在性检查：不需要浏览器，任何时候都跑。
+    # 它管的是"写了 className 但样式没定义"这类不报错的缺陷。
+    problems = (
+        check_contrast(v)
+        + check_palette(v)
+        + check_css_classes(ROOT / "src" / "renderer", CSS)
+    )
 
     if "--render" in sys.argv:
         browser = find_browser()

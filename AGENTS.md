@@ -73,10 +73,12 @@ pnpm metrics:selftest     # 指标库自测
 pnpm eval:selftest        # 评测流水线自测
 pnpm validate:dataset     # 数据集契约校验
 pnpm freeze:verify        # 契约冻结校验
+pnpm ipc:check            # IPC 契约对账（命令 + 事件 + 订阅 + 是否真发送）
+pnpm verify:all           # 上面这些 + typecheck + test 一条龙
 pnpm fixtures             # 起夹具静态服务 127.0.0.1:8000
 
 # 界面验证（Electron 起不来时的替代路径）
-pnpm ui:verify            # 打包→起服务→逐面板截图→断言→对比度+像素统计
+pnpm ui:verify            # 打包→起服务→逐面板截图→断言→对比度+像素统计+样式类存在性
 ```
 
 ### 3.1 Python 必须带的两个环境变量
@@ -165,7 +167,7 @@ src/
 
 | 想验证什么 | 可行手段 |
 |---|---|
-| 纯逻辑正确性 | vitest（已覆盖 300 项） |
+| 纯逻辑正确性 | vitest（已覆盖 381 项） |
 | 界面布局与配色 | `pnpm ui:verify`（Edge 无头渲染，见 §5.1） |
 | 窗口/CDP/拾取行为 | **必须上真机**，本地做不到，不要假装能验 |
 
@@ -298,22 +300,70 @@ pnpm ui:verify          # 动了界面才需要
 ### 7.3 IPC 契约对账（改过通道必跑）
 
 ```powershell
-python -c @"
-import re, pathlib
-main = pathlib.Path('src/main/main.ts').read_text(encoding='utf-8')
-types = pathlib.Path('src/shared/types.ts').read_text(encoding='utf-8')
-handled = set(re.findall(r\"ipcMain\.handle\(\s*'([^']+)'\", main, re.S))
-for m in re.findall(r'for \(const channel of \[([^\]]+)\] as const\)', main, re.S):
-    handled |= {x.strip().strip(chr(39)) for x in m.split(',') if x.strip()}
-declared = set(re.findall(r\"^\s*'([a-z]+:[A-Za-z]+)':\", types, re.M))
-cmds = {c for c in declared if not c.startswith('evt:')}
-print('契约 %d / 实现 %d' % (len(cmds), len(handled)))
-print('未实现:', sorted(cmds-handled) or '无')
-print('未进契约:', sorted(handled-cmds) or '无')
-"@
+pnpm ipc:check          # 等价于 python scripts/check_ipc.py --events
 ```
 
-两侧都必须是「无」。
+以前这里贴的是一段内联 Python。**已删掉**，原因很实际：那段脚本要在
+PowerShell 里转义引号，实测每次都要写错一两轮才跑得起来。一个"跑起来很费劲"
+的检查最终会被跳过，而**被跳过的检查等于不存在**。
+
+脚本检查四件事，**每条都对应一类真实翻车**：
+
+| 检查 | 抓什么 |
+|---|---|
+| 命令通道：契约 ↔ 实现 | 声明了没实现（运行时炸）/ 实现了没进契约（越界） |
+| 事件通道：契约 ↔ preload 订阅 | 订阅了错名字，或契约里有却无人监听 |
+| **事件是否真的被 `send`** | 声明了、也订阅了，但主进程从不发送——**不会报错的谎言** |
+| `PLANNED_UNSENT` 白名单 | 区分「有意为之的未实现」与「忘了接的实现」 |
+
+两侧都必须干净。已知的两个未发送事件（`evt:progress` / `evt:awaitConfirm`，
+依赖 Phase 5）**必须在 `scripts/check_ipc.py` 的 `PLANNED_UNSENT` 里登记**，
+否则判失败。新加幻影事件时，要么接上发送方，要么显式登记并写明依赖阶段。
+
+---
+
+### 7.4 新增坑（本轮踩到，三次同类）
+
+#### 假桥与真实 API 的漂移（已用测试钉死）
+
+`preview/preview-api.js` 是**普通 JS，不参与 `tsc`**，所以它和
+`src/preload/index.ts` 的漂移**编译期完全发现不了**。已经栽过三次：
+
+| 漂移 | 后果 |
+|---|---|
+| `exportDir` 写在顶层（真实是 `general.exportDir`） | 设置面板**白屏** |
+| 漏 `onBrowserClosed` | 预览里面板**直接崩** |
+| `pickerState` 漏 `open/url/kernel/pendingPick` | 面板显示**假的**窗口状态 |
+
+现在有 `tests/preview-parity.test.ts`：源码级提取 + 集合比对，**已注入漂移验证过会真红**。
+改了 preload API 就必须同步假桥，否则 `pnpm test` 立刻红。
+
+#### 手抄的类型副本会静默失效
+
+`src/renderer/env.d.ts` 曾手抄一份 `GradingExamBridge`，14 个方法、
+返回类型大量写成 `unknown`。后果：**字段名写错在渲染层完全不报错**
+（本轮把 `r.result` / `r.diagnostic` 写成错名，一路活到运行时）。
+
+现在真源是 `src/preload/index.ts` 的 `GradingExamApi = Omit<typeof api, 'invoke'>`，
+`env.d.ts` 只做 `import type {} from '../preload/index'`。
+**不要在任何地方手抄这份类型。**
+
+#### 样式类没有定义不会报错
+
+写了 `className="segmented"` 而 CSS 里没有这个类，元素回退成浏览器默认样式：
+按钮变灰白方块、并排字段竖着堆。截图仍然"有内容"、对比度也照样过。
+
+`pnpm ui:verify` 现在会断言 **TSX 里静态 className 用到的每个类都在
+`styles.css` 里有定义**（已注入缺失类验证过会红）。
+动态拼接的类名不在此列——那部分不假装能检查。
+
+#### 验证脚本自己会静默不生效
+
+本轮我用 PowerShell 正则做替换来注入测试探针，`-replace` **没匹配上**，
+于是"探针通过"变成了假象。我是靠额外加一句"替换是否生效"的断言才发现的。
+
+**规则**：任何"注入故障看是否报错"的验证，必须同时断言**注入本身生效了**。
+否则你验证的是"什么都没改变时一切正常"。
 
 ---
 
@@ -359,8 +409,8 @@ pnpm test           # 同上
 ### 8.2 测试先行（针对纯逻辑）
 
 纯逻辑模块**先写测试再写实现**。理由同 §4.4：这是唯一能在本机验证的手段。
-已覆盖 300 项（`ensemble` 51 / `geometry` 66 / `ai` 60 / `locator` 45 /
-`picker` 43 / `selector` 35）。
+已覆盖 381 项（`geometry` 66 / `ai` 60 / `ensemble` 51 / `locator` 45 /
+`picker` 43 / `objective` 39 / `selector` 35 / `parse` 34 / `preview-parity` 9）。
 
 ### 8.3 写"为什么"，不是"是什么"
 
@@ -399,7 +449,7 @@ feat(界面): 简洁 + 一点点二次元；修掉四处「界面在说谎」
 | Phase 1 AI 层 | ✅ |
 | Phase 2 自动化层（纯代码 + 界面） | ✅（CDP/窗口 ⚠ 未在真机验证） |
 | Phase 3 界面壳 | ✅ |
-| Phase 4 单题闭环 | ⬜ 下一步 |
+| Phase 4 单题闭环 | 🟡 代码侧 ✅ / 界面侧 ✅ / 端到端 ⬜（待真机） |
 | Phase 5~7 | ⬜ |
 
 **仍需人工推进**（本机无法替代）：真实阅卷平台账号、教师标注资源（E2）、

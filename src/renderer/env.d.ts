@@ -1,32 +1,20 @@
 /// <reference types="vite/client" />
 
-import type { AppInfo } from '../preload/index';
-import type { LogEntry, TokenUsage } from '../shared/types';
+/**
+ * 渲染层的全局类型声明。
+ *
+ * ⚠ 这里**刻意不重复声明 `window.gradingExam` 的形状**。
+ *
+ * 原先这里手抄了一份 `GradingExamBridge`，14 个方法、返回类型大量写成 `unknown`：
+ *   · 它漏了 `onBrowserClosed` / `pickerState` / `parseFile` 等真实存在的方法
+ *   · 返回类型是 `unknown`，所以 `r.result` / `r.diagnostic` 这类**字段名写错**
+ *     在渲染层完全不报错，一路活到运行时（本轮真的踩到了）
+ *
+ * 真源是 `src/preload/index.ts` 导出的 `GradingExamApi`（由 api 对象 `typeof` 推出），
+ * 它自己会 `declare global` 扩到 Window 上，所以这里什么都不用做。
+ * 少一份手抄，就少一处会静默漂移的地方。
+ */
 
-interface GradingExamBridge {
-  getSettings: () => Promise<unknown>;
-  saveSettings: (patch: unknown) => Promise<unknown>;
-  getUsage: () => Promise<unknown>;
-  resetUsage: () => Promise<unknown>;
-  getAppInfo: () => Promise<AppInfo>;
-  getLogHistory: () => Promise<LogEntry[]>;
-  writeLog: (level: 'info' | 'ok' | 'warn' | 'error', message: string) => Promise<void>;
-  pickFile: (opts: {
-    filters: Array<{ name: string; extensions: string[] }>;
-    multi?: boolean;
-  }) => Promise<{ canceled: boolean; paths: string[] }>;
-  pickDir: () => Promise<{ canceled: boolean; path: string }>;
-  onLog: (cb: (e: LogEntry) => void) => () => void;
-  onUsage: (cb: (u: TokenUsage) => void) => () => void;
-  onPick: (cb: (r: unknown) => void) => () => void;
-  onProgress: (cb: (p: unknown) => void) => () => void;
-}
-
-declare global {
-  interface Window {
-    gradingExam: GradingExamBridge;
-    __gradingExamViewer?: unknown;
-  }
-}
+import type {} from '../preload/index';
 
 export {};

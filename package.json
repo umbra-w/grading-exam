@@ -26,9 +26,11 @@
     "freeze:contract": "python scripts/freeze.py --contract",
     "freeze:show": "python scripts/freeze.py --show",
     "freeze:verify": "python scripts/freeze.py --verify",
+    "ipc:check": "python scripts/check_ipc.py --events",
     "ui:preview": "vite build --config preview/vite.config.mjs",
     "ui:serve": "python -m http.server 8765 --bind 127.0.0.1 --directory preview/dist",
-    "ui:verify": "python preview/verify_ui.py --render"
+    "ui:verify": "python preview/verify_ui.py --render",
+    "verify:all": "npm run typecheck && npm run test && npm run ipc:check && npm run validate:dataset && npm run freeze:verify && npm run metrics:selftest && npm run eval:selftest"
   },
   "dependencies": {
     "electron-store": "^12.0.0",

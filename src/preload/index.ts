@@ -9,7 +9,9 @@
  * 改为：
  *   · 用共享契约 `IPC` 的类型作为唯一真源，通道名只出现在 types.ts
  *   · 暴露一个**泛型派发器**，类型安全由 `IPC[K]` 约束
- *   · 只对 8 个高频动作用写起来舒服的便捷方法包一层
+ *   · 只对高频动作用写起来舒服的便捷方法包一层
+ *（真源只剩一处：泛型派发器里的 `invoke('通道名')` 字面量，
+ * 而它由 `IPC[K]` 约束，写错名字编译期就报错——所以并不算第二个真源。）
  *
  * 实体通道的白名单由**主进程**把关（只有声明过的才注册 handler），
  * preload 不需要也不能替代那道检查。
@@ -22,6 +24,7 @@ import type {
   IPC,
   LogEntry,
   LogLevel,
+  ParseResult,
   PickResult,
   TokenUsage,
 } from '../shared/types';
@@ -77,6 +80,22 @@ const api = {
     multi?: boolean;
   }): Promise<{ canceled: boolean; paths: string[] }> => invoke('io:pickFile', opts),
   pickDir: (): Promise<{ canceled: boolean; path: string }> => invoke('io:pickDir'),
+  /**
+   * 解析文件为纯文本。**不抛异常**：失败时返回 `{ok:false, code, message}`，
+   * `message` 是中文说明且包含"下一步怎么办"，可直接展示给用户。
+   */
+  parseFile: (filePath: string): Promise<ParseResult> => invoke('io:parseFile', filePath),
+  /** 导出 Excel（只出 xlsx，不出 csv —— UTF-8 CSV 在中文 Excel 里会乱码） */
+  exportExcel: (payload: Parameters<IPC['io:exportExcel']>[0]) =>
+    invoke('io:exportExcel', payload),
+  exportMarkdown: (payload: Parameters<IPC['io:exportMarkdown']>[0]) =>
+    invoke('io:exportMarkdown', payload),
+  /**
+   * 客观题本地比对。**零网络零 token** —— 界面上标记为"本地比对"的路径
+   * 走的就是它，任何时候都不应该产生 API 费用。
+   */
+  compareObjective: (payload: Parameters<IPC['objective:compare']>[0]) =>
+    invoke('objective:compare', payload),
 
   /* ---- AI ---- */
   aiTest: (cfg: Parameters<IPC['ai:test']>[0]) => invoke('ai:test', cfg),
@@ -133,9 +152,42 @@ const api = {
     ipcRenderer.on('evt:progress', h);
     return () => ipcRenderer.removeListener('evt:progress', h);
   },
+  /**
+   * 阅卷窗口被关闭（用户手动关掉，不是我们调的 close）。
+   *
+   * 不订阅的话界面会永远显示"窗口已打开"——用户关掉窗口后点拾取，
+   * 得到的是"请先打开阅卷窗口"却又看着界面说已经打开，完全不知所措。
+   */
+  onBrowserClosed: (cb: () => void): (() => void) => {
+    const h = (): void => cb();
+    ipcRenderer.on('evt:browserClosed', h);
+    return () => ipcRenderer.removeListener('evt:browserClosed', h);
+  },
+  /**
+   * 「稳健模式」等待人工确认。
+   *
+   * 消费方是 Phase 5 的连续阅卷流程；此处先把订阅接上，
+   * 免得通道在契约里却无人监听——那种情况下主进程发了事件也**不会有任何报错**。
+   */
+  onAwaitConfirm: (cb: (p: { score: number; comment: string }) => void): (() => void) => {
+    const h = (_e: unknown, payload: { score: number; comment: string }): void => cb(payload);
+    ipcRenderer.on('evt:awaitConfirm', h);
+    return () => ipcRenderer.removeListener('evt:awaitConfirm', h);
+  },
 };
 
-export type GradingExamApi = typeof api;
+/**
+ * 暴露给渲染层的 API 类型。
+ *
+ * **刻意摘掉 `invoke` 逃生口**：渲染层只应通过具名方法访问主进程，
+ * 这样每个可用能力在类型上都是显式的（33 个），而不是"任意通道都能调"。
+ * 逃生口仍留在 preload 内部供便捷方法使用，只是不出现在 Window 类型里。
+ *
+ * 真源就是 `api` 对象本身（`typeof api`），不存在手抄的第二份——
+ * 原先 `env.d.ts` 手抄了一份且把返回类型大量写成 `unknown`，
+ * 结果字段名写错在渲染层完全不报错。
+ */
+export type GradingExamApi = Omit<typeof api, 'invoke'>;
 
 declare global {
   interface Window {

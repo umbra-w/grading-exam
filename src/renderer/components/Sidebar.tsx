@@ -16,7 +16,10 @@ interface NavDef {
 
 const NAV: NavDef[] = [
   { key: 'browser', label: '浏览器阅卷', glyph: '◈', title: '拾取与窗口已可用；连续阅卷待实现', done: true },
-  { key: 'single', label: '智能阅卷', glyph: '✎', title: '单题批改：待实现', done: false },
+  // 单题批改已实现（Phase 4）：客观题本地比对 + 主观题 AI 评分。
+  // 这里此前写着「待实现」并挂「未实现」标签——界面已经能用了，
+  // 标签还在说不能用。正好是 §6.4 那类「界面在说谎」。
+  { key: 'single', label: '智能阅卷', glyph: '✎', title: '单题批改：客观题本地比对 + 主观题 AI 评分', done: true },
   { key: 'paper', label: '整卷阅卷', glyph: '▤', title: '整卷批量批改：待实现', done: false },
   { key: 'analysis', label: '学情分析', glyph: '◔', title: '学情报告与导出：待实现', done: false },
   { key: 'settings', label: '设置', glyph: '⚙', title: 'AI 供应商与导出目录', done: true },

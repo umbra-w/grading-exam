@@ -93,6 +93,13 @@ window.gradingExam = {
   // 回显两项：题目区域 + 分数框已拾取，提交按钮未拾取，
   // 这样截图里能同时看到「已拾取」与「未拾取」两种视觉状态。
   pickerState: async () => ({
+    // BrowserStateSnapshot 的完整形状。缺字段会让面板读到 undefined 而不报错——
+    // 之前这里就漏了 open/url/kernel/pendingPick，面板显示的窗口状态是假的。
+    open: true,
+    url: 'https://platform.example.com/grading/paper/12345',
+    kernel: 'chrome',
+    pendingPick: null,
+    fingerprint: 'preview-fingerprint-0000',
     picks: {
       questionRegion: {
         kind: 'questionRegion', mode: 'element', topX: 812, topY: 364,
@@ -119,12 +126,124 @@ window.gradingExam = {
   captureQuestion: async () => ({ ok: true, base64: 'iVBORw0KGgoAAAANSUhEUg'.repeat(60) }),
   checkDrift: async () => ({ changed: false }),
 
-  invoke: async () => ({ ok: false, error: '预览模式不支持该通道' }),
+  // ⚠ 这里**刻意不提供 invoke 逃生口**：真实的 Window 类型是
+  // `Omit<typeof api, 'invoke'>`，渲染层拿不到任意通道的调用能力。
+  // 假桥比真桥多出这个能力，就会让"渲染层绕过契约"的代码在预览里跑通、
+  // 到真机上才炸 —— 预览的职责是复现真实约束，不是放宽它。
 
   onLog: () => () => undefined,
   onUsage: () => () => undefined,
   onPick: () => () => undefined,
   onProgress: () => () => undefined,
+  onBrowserClosed: () => () => undefined,
+  onAwaitConfirm: () => () => undefined,
+
+  // Phase 4：解析与导出。返回**真实形状**的假结果，
+  // 让界面能渲染出"解析成功 + 警告"和"解析失败 + 原因"两种状态。
+  parseFile: async (filePath) => {
+    const name = String(filePath || '').split(/[\\/]/).pop() || 'unknown.txt';
+    if (name.endsWith('.pdf')) {
+      // 演示失败分支：界面必须能显示原因码与中文说明
+      return {
+        ok: false, name, ext: '.pdf', code: 'SCANNED_PDF',
+        message: '这个 PDF 共 12 页，几乎提取不到文字，应该是扫描件或整页图片。本软件不做 OCR。',
+      };
+    }
+    return {
+      ok: true, name, ext: '.docx', charCount: 1284, pageCount: 4,
+      text: '一、选择题（每题 3 分）\n1. 下列关于碳酸钙的说法正确的是（ ）\n...',
+      warnings: [{ code: 'PARTIAL_TEXT', message: '有 1 页没有提取到文字（可能是图片页），请核对。' }],
+    };
+  },
+  exportExcel: async (p) => ({ ok: true, path: String(p?.outPath || 'C:\\exports\\report.xlsx') }),
+  exportMarkdown: async (p) => ({ ok: true, path: String(p?.outPath || 'C:\\exports\\report.md') }),
+
+  /* ---- AI ---- */
+  // ⚠ AICallResult 的字段名：诊断信息叫 `diag`（不是 diagnostic），
+  // 评分类结构化结果叫 `grade`（不是 result）。写错不报错，
+  // 只是读出来永远是 undefined —— 这正是本轮修过的一类缺陷。
+  aiGrade: async () => ({
+    ok: true,
+    text: '{"score":8,"confidence":0.86}',
+    usage: { promptTokens: 812, completionTokens: 168, totalTokens: 980 },
+    diag: { model: 'preview-model', finishReason: 'stop', httpStatus: 200, thinkingDisabled: true },
+    grade: {
+      score: 8,
+      comment:
+        'M(CaCO₃) = 40 + 12 + 16×3 = 100 g/mol 的计算完全正确，也标注了单位。' +
+        '但式中 16×3 未单独写出，扣 2 分。',
+      hitPoints: ['写出相对原子质量求和式', '结果 100 正确', '标注了单位 g/mol'],
+      missedPoints: ['未单独写出 16×3 = 48 这一步'],
+      confidence: 0.86,
+      reviewRequested: false,
+      warnings: ['模型把「相对分子质量」说成了「摩尔质量」，术语已在校验中纠正'],
+      promptVersion: 'p1',
+      promptHash: 'a1b2c3d4e5f60718',
+    },
+  }),
+
+  aiParsePaper: async () => ({
+    ok: true,
+    text: '{"questions":[]}',
+    usage: { promptTokens: 1240, completionTokens: 420, totalTokens: 1660 },
+    diag: { model: 'preview-model', finishReason: 'stop', httpStatus: 200 },
+    data: { questions: [] },
+  }),
+
+  // 多次运行（自一致性）：界面要能看出"模型自己都不一致"的证据
+  aiGradeMulti: async () => ({
+    ok: true,
+    text: '{}',
+    usage: { promptTokens: 2400, completionTokens: 500, totalTokens: 2900 },
+    diag: { model: 'preview-model', finishReason: 'stop' },
+    grade: {
+      score: 8,
+      comment: '三次运行结果一致。',
+      hitPoints: ['写出求和式'],
+      missedPoints: ['未写出 16×3'],
+      confidence: 0.86,
+      reviewRequested: false,
+      warnings: [],
+      promptVersion: 'p1',
+      promptHash: 'a1b2c3d4e5f60718',
+      ensemble: {
+        runs: 3,
+        scores: [8, 8, 7.5],
+        disagreement: 0.05,
+        agreement: 'consistent',
+        commonMisses: ['未写出 16×3'],
+        contradictoryPoints: [],
+      },
+    },
+  }),
+
+  aiVisionAnswers: async () => ({
+    ok: true,
+    text: '{}',
+    usage: { promptTokens: 3200, completionTokens: 300, totalTokens: 3500 },
+    diag: { model: 'preview-vision', finishReason: 'stop' },
+    data: { answers: [] },
+  }),
+
+  aiTest: async () => ({
+    ok: true,
+    text: 'pong',
+    usage: { promptTokens: 8, completionTokens: 2, totalTokens: 10 },
+    diag: { model: 'preview-model', finishReason: 'stop', httpStatus: 200 },
+  }),
+
+  /* ---- 客观题本地比对（零网络零 token） ---- */
+  // 特意演示 suspect 分支：学生写了选项内容而不是字母。
+  // 真实实现里这个分支**不给分且要求人工确认**，界面必须能看到它，
+  // 否则这个最容易被忽略的分支就永远没被人看过。
+  compareObjective: async () => ({
+    verdict: 'suspect',
+    awarded: false,
+    normalized: '碳酸钙的摩尔质量',
+    expected: 'B',
+    reason: '学生填写的是选项内容而非选项字母，无法自动确认对应关系，需人工核对。',
+    needsReview: true,
+  }),
 };
 
 // 让自动化脚本能判断"界面确实水合成功了"，而不是只看截图猜

@@ -3,6 +3,59 @@
  * 任何跨进程数据都必须在这里定义，禁止 any 穿越边界。
  */
 
+/* ------------------------------------------------------- 文件解析与导出 */
+
+/**
+ * 文件解析结果 —— 跨 IPC 传输的形状。
+ *
+ * 与 `src/main/io/parse.ts` 的定义是同一套事实，但**刻意分开**：
+ * 主进程那份包含 filePath 等本机信息，渲染层不需要也不该拿到。
+ * 这里只保留展示与决策所需的最小集合。
+ */
+export type ParseErrorCode =
+  | 'UNSUPPORTED_TYPE'
+  | 'READ_FAILED'
+  | 'TOO_LARGE'
+  | 'EMPTY_FILE'
+  | 'SCANNED_PDF'
+  | 'ENCRYPTED_PDF'
+  | 'PARSE_FAILED';
+
+export interface ParseWarning {
+  code: 'PARTIAL_TEXT' | 'LOW_TEXT_DENSITY' | 'ENCODING_FALLBACK' | 'NO_EXTENSION';
+  message: string;
+}
+
+export type ParseResult =
+  | {
+      ok: true;
+      name: string;
+      ext: string;
+      text: string;
+      charCount: number;
+      pageCount?: number;
+      warnings: ParseWarning[];
+    }
+  | {
+      ok: false;
+      name: string;
+      ext: string;
+      code: ParseErrorCode;
+      message: string;
+    };
+
+/** 客观题比对的跨进程结果（形状与 shared/objective.ts 的 ObjectiveResult 一致） */
+export type ObjectiveVerdict = 'correct' | 'correct_alt' | 'blank' | 'wrong' | 'suspect';
+
+export interface ObjectiveVerdictResult {
+  verdict: ObjectiveVerdict;
+  awarded: boolean;
+  normalized: string;
+  expected: string;
+  reason: string;
+  needsReview: boolean;
+}
+
 /* ------------------------------------------------------------------ AI */
 
 export type ProviderId =
@@ -266,6 +319,20 @@ export interface GradingDetail {
   missedPoints: string[];
   /** 客观题本地比对，true 表示未消耗 token */
   local?: boolean;
+  /**
+   * 0~1 置信度。
+   *
+   * 为什么必须持久化：整套分层阈值（辅助阅卷 / 自动填分 / 自动提交）
+   * 与"低置信度进复核队列"都以它为依据。此前只有 `GradeResult` 带这个字段，
+   * 而落库/导出用的 `GradingDetail` 没有——结果一存盘置信度就丢了，
+   * 复核队列与分层判定全部失去依据，且**不会有任何报错**。
+   *
+   * 客观题由本地比对产生：确定性判定给 1，疑似写法差异（suspect）给 0.5
+   * 并置 `reviewRequested`，见 `shared/objective.ts`。
+   */
+  confidence: number;
+  /** 是否建议人工复核。低置信度、疑似写法、多轮分歧都由上层置 true */
+  reviewRequested: boolean;
 }
 
 export interface StudentAnswer {
@@ -450,10 +517,49 @@ export interface IPC {
     multi?: boolean;
   }) => { canceled: boolean; paths: string[] };
   'io:pickDir': () => { canceled: boolean; path: string };
+  /**
+   * 解析一个文件为纯文本（docx / pdf / txt / md）。
+   *
+   * **不抛异常**：所有失败以 `ok:false` + 原因码 + 中文说明返回。
+   * 扫描件 PDF 会明确报 `SCANNED_PDF` 而不是返回空文本——
+   * 后者会让用户以为"试卷是空的"，是最典型的静默失败。
+   */
+  'io:parseFile': (filePath: string) => ParseResult;
+  /** 导出 Excel（仅 .xlsx，不出 CSV：UTF-8 CSV 在中文 Excel 里会乱码） */
+  'io:exportExcel': (payload: {
+    report: PaperReport;
+    outPath: string;
+  }) => { ok: boolean; path?: string; error?: string };
+  /** 导出 Markdown 报告 */
+  'io:exportMarkdown': (payload: {
+    report: PaperReport;
+    outPath: string;
+  }) => { ok: boolean; path?: string; error?: string };
+  /**
+   * 客观题本地比对 —— **零网络、零 token**。
+   *
+   * 为什么做成通道而不是让渲染层自己 import `shared/objective.ts`：
+   * 判定逻辑必须只有一处实现。渲染层再写一遍，两边就会在某个边界
+   * （全角、不可见字符、空标准答案）上分叉，而且是**静默分叉**——
+   * 界面显示"对"、落库记"错"这种事最难查。
+   * 通道化还顺带让"客观题不走 AI"这条纪律在架构上无法被绕过。
+   */
+  'objective:compare': (payload: {
+    student: string;
+    expected: string;
+    acceptable?: string[];
+    optionText?: Record<string, string>;
+  }) => ObjectiveVerdictResult;
 }
 
-/** main → renderer 的推送事件 */
-export interface IPC {
+/**
+ * main → renderer 的推送事件（`evt:*`）。
+ *
+ * 单独一个接口而不是并进 `IPC`：这两类的方向相反、失败语义也完全不同
+ * （invoke 有 Promise 与错误码，事件只推送、失败无处可返）。
+ * 分开命名能避免"给事件加返回值"这种根本不可能生效的改动。
+ */
+export interface IPCEvents {
   'evt:pick': (r: PickResult) => void;
   'evt:log': (e: LogEntry) => void;
   'evt:progress': (p: LoopProgress) => void;

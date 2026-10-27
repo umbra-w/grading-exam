@@ -69,6 +69,36 @@ export function BrowserPanel(): JSX.Element {
     pushLog({ ts: Date.now(), level, message });
   }
 
+  // 阅卷窗口是否打开。**不只在 openPage 里设**：用户手动关掉窗口、
+// 或面板重新挂载（切页签、开发者热更新）后，本地状态就会与事实不符——
+// 那种情况下界面说"已打开"，点拾取却报"请先打开阅卷窗口"，用户完全懵。
+  // 所以这里以主进程的 pickerState 为权威，并把刷新点铺到三处。
+  useEffect(() => {
+    let alive = true;
+    const sync = (): void => {
+      void window.gradingExam
+        .pickerState()
+        .then((s) => {
+          if (!alive) return;
+          setOpened(s.open);
+          // 主进程是权威来源：本地 picked 只做即时反馈，
+          // 但切页签/重挂载后必须以主进程为准，否则会漏掉已拾取项
+          if (Object.keys(s.picks ?? {}).length > 0) {
+            setPicked(s.picks);
+          }
+          setPicking(s.pendingPick ?? null);
+        })
+        .catch(() => undefined);
+    };
+
+    sync(); // 挂载时
+    window.addEventListener('focus', sync); // 用户从阅卷窗口切回来时
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', sync);
+    };
+  }, []);
+
   // 订阅拾取结果。必须取消订阅：StrictMode 下会挂载两次，漏了会收到双份
   useEffect(() => {
     const off = window.gradingExam.onPick((r) => {
@@ -77,7 +107,16 @@ export function BrowserPanel(): JSX.Element {
       const where = r.mode === 'coordinate' ? `坐标 (${r.topX}, ${r.topY})` : (r.selector ?? '(无选择器)');
       log('ok', `已拾取「${labelOf(r.kind)}」：${where}${r.inIframe ? '（iframe 内）' : ''}`);
     });
-    return off;
+    // 窗口被用户关掉时同步状态，否则面板会一直显示"窗口已打开"
+    const offClosed = window.gradingExam.onBrowserClosed(() => {
+      setOpened(false);
+      setPicking(null);
+      log('warn', '阅卷窗口已被关闭');
+    });
+    return () => {
+      off();
+      offClosed();
+    };
   }, [pushLog]);
 
   async function openPage(): Promise<void> {

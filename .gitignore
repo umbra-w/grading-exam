@@ -23,3 +23,7 @@ preview/dom-*.html
 # 所有 Python 调用都应带 PYTHONDONTWRITEBYTECODE=1；这条是第二道防线。
 __pycache__/
 *.pyc
+
+# 临时文件。提交信息、草稿、调试输出都写 .tmp，
+# 加这条是为了避免"手滑 git add -A 把临时文件也提交进去"。
+*.tmp

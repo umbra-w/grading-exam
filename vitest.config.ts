@@ -16,6 +16,7 @@ export default defineConfig({
     alias: {
       // 用 import.meta.dirname 而非 __dirname：Vite 的 native config loader 不支持后者
       '@shared': resolve(import.meta.dirname, 'src/shared'),
+      '@main': resolve(import.meta.dirname, 'src/main'),
       '@': resolve(import.meta.dirname, 'src/renderer'),
     },
   },
