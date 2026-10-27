@@ -1,36 +1,43 @@
+# 依赖包
 node_modules/
+.pnpm-store/
+
+# 构建与打包输出
 out/
-
-# electron-builder 的打包产物（数百 MB 的 unpacked 目录 + 安装包）。
-# 可以随时用 `pnpm dist` 重建，不该进仓库。
-release/
 dist/
+release/
 *.log
-# 注意：build/ **不在**忽略列表里 —— build/icon.ico 与 icon.png 是应用图标，
-# 属于源文件（由 scripts/make_icon.ps1 可重建，但打包需要它们在场）。
-# 只忽略 build 下可能的临时产物。
-build/*.tmp
-.DS_Store
-.env
-.env.local
 
-# 评测轨产物：答卷原始图片与标注数据含个人信息，禁止入库（PLAN v2.0 §3 E2 脱敏要求）
-data/raw/
-data/derived/
+# 运行时数据与配置 (便携版运行时目录，严禁提交个人/真实答题数据)
+data/
 *.local.json
 
-# 界面预览的生成物。preview/ 下的源码（假桥、检查脚本）要入库——
-# 它们是"改了 CSS 能验证"的凭据，丢了就只能靠肉眼。
-# dist/ 已被上面覆盖；截图与 DOM dump 是产物，每次重跑都会重新生成。
+# 系统与 IDE 缓存
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.user
+
+# 环境变量与私密配置
+.env
+.env.local
+.env.*.local
+
+# 评测与原始答卷数据集 (含学生个人隐私，严禁入库)
+data/raw/
+data/derived/
+
+# 界面预览生成物 (截图与 DOM dump 为临时产物)
 preview/shot-*.png
 preview/dom-*.html
 
-# Python 隐式产物。AGENTS.md（workspace 级）明确把这类隐式写入也算作写文件：
-# 裸跑 `python -c "import metrics"` 就会在源码旁生成 __pycache__。
-# 所有 Python 调用都应带 PYTHONDONTWRITEBYTECODE=1；这条是第二道防线。
+# Python 缓存 (AGENTS 防侧漏规范)
 __pycache__/
 *.pyc
+*.pyo
 
-# 临时文件。提交信息、草稿、调试输出都写 .tmp，
-# 加这条是为了避免"手滑 git add -A 把临时文件也提交进去"。
+# 临时与构建残余文件
+build/*.tmp
 *.tmp
