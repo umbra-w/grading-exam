@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { useStore } from '../store';
 
-const LEVEL_TAG: Record<string, string> = {
-  info: 'INFO',
-  ok: ' OK ',
-  warn: 'WARN',
-  error: 'ERR ',
+const LEVEL_CONFIG: Record<string, { label: string; cls: string }> = {
+  info: { label: 'INFO', cls: 'info' },
+  ok: { label: 'OK', cls: 'ok' },
+  warn: { label: 'WARN', cls: 'warn' },
+  error: { label: 'ERR', cls: 'error' },
 };
 
 function fmtTime(ts: number): string {
@@ -16,16 +16,19 @@ function fmtTime(ts: number): string {
 
 export function LogBar(): JSX.Element {
   const logs = useStore((s) => s.logs);
-  const [collapsed, setCollapsed] = useState(false);
+  const isLogOpen = useStore((s) => s.isLogOpen);
+  const toggleLog = useStore((s) => s.toggleLog);
+  const clearLogs = useStore((s) => s.clearLogs);
+
   const [follow, setFollow] = useState(true);
+  const [filterErrorOnly, setFilterErrorOnly] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  // 自动滚到底；用户手动上滚时暂停跟随，避免打断排查
   useEffect(() => {
-    if (!follow || collapsed) return;
+    if (!follow || !isLogOpen) return;
     const el = bodyRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [logs, follow, collapsed]);
+  }, [logs, follow, isLogOpen]);
 
   function onScroll(): void {
     const el = bodyRef.current;
@@ -36,38 +39,76 @@ export function LogBar(): JSX.Element {
 
   const errCount = logs.filter((l) => l.level === 'error').length;
   const warnCount = logs.filter((l) => l.level === 'warn').length;
+  const displayLogs = filterErrorOnly ? logs.filter((l) => l.level === 'error' || l.level === 'warn') : logs;
 
   return (
-    <div className={`logbar${collapsed ? ' collapsed' : ''}`}>
+    <div className={`logbar${isLogOpen ? '' : ' collapsed'}`}>
       <div className="logbar-head">
-        <span className="title">运行日志</span>
+        <span className="title">
+          <span className="log-icon">❯_</span>
+          <span>运行控制台</span>
+        </span>
         <span className="badge gray">{logs.length} 条</span>
-        {errCount > 0 ? <span className="badge" style={{ color: '#fca5a5' }}>{errCount} 错误</span> : null}
-        {warnCount > 0 ? <span className="badge amber">{warnCount} 警告</span> : null}
+        {errCount > 0 ? (
+          <span
+            className="badge red"
+            onClick={() => setFilterErrorOnly(true)}
+            style={{ cursor: 'pointer' }}
+            title="点击仅看错误"
+          >
+            {errCount} 错误
+          </span>
+        ) : null}
+        {warnCount > 0 ? (
+          <span
+            className="badge amber"
+            onClick={() => setFilterErrorOnly(true)}
+            style={{ cursor: 'pointer' }}
+            title="点击仅看警告"
+          >
+            {warnCount} 警告
+          </span>
+        ) : null}
 
         <span className="spacer" />
 
-        {!collapsed ? (
-          <button onClick={() => setFollow((v) => !v)} title="是否自动滚动到最新">
-            {follow ? '跟随中' : '已暂停'}
-          </button>
-        ) : null}
-        <button onClick={() => setCollapsed((v) => !v)}>{collapsed ? '展开' : '收起'}</button>
+        <button
+          className={filterErrorOnly ? 'active' : ''}
+          onClick={() => setFilterErrorOnly((v) => !v)}
+          title="筛选告警与错误"
+        >
+          {filterErrorOnly ? '查看全部' : '只看异常'}
+        </button>
+
+        <button onClick={() => setFollow((v) => !v)} title="是否随新日志自动滚到底部">
+          {follow ? '跟随中' : '已暂停'}
+        </button>
+
+        <button onClick={clearLogs} title="清空当前日志">
+          清空
+        </button>
+
+        <button className="close-btn" onClick={toggleLog} title="收起控制台">
+          ✕
+        </button>
       </div>
 
-      {!collapsed ? (
+      {isLogOpen ? (
         <div className="logbar-body" ref={bodyRef} onScroll={onScroll}>
-          {logs.length === 0 ? (
-            <div className="empty">暂无日志</div>
+          {displayLogs.length === 0 ? (
+            <div className="empty">暂无运行日志</div>
           ) : (
-            logs.map((l, i) => (
-              <div key={`${l.ts}-${i}`} className={`logline ${l.level}`}>
-                <span className="t">{fmtTime(l.ts)}</span>{' '}
-                <span className="t">{LEVEL_TAG[l.level] ?? 'INFO'}</span>{' '}
-                {'  '.repeat(l.depth ?? 0)}
-                {l.message}
-              </div>
-            ))
+            displayLogs.map((l, i) => {
+              const cfg = LEVEL_CONFIG[l.level] ?? { label: 'INFO', cls: 'info' };
+              return (
+                <div key={`${l.ts}-${i}`} className={`logline ${cfg.cls}`}>
+                  <span className="t">{fmtTime(l.ts)}</span>
+                  <span className={`tag tag-${cfg.cls}`}>{cfg.label}</span>
+                  {'  '.repeat(l.depth ?? 0)}
+                  <span className="msg">{l.message}</span>
+                </div>
+              );
+            })
           )}
         </div>
       ) : null}

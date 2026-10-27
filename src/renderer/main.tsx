@@ -3,6 +3,18 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './styles.css';
 
+// 初始化 Windows 11 Fluent 视觉主题（深浅双模支持）
+try {
+  const saved = localStorage.getItem('ge_theme');
+  if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+} catch {
+  // 忽略
+}
+
 /**
  * 渲染层入口。
  *

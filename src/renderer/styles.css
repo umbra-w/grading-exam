@@ -1,87 +1,111 @@
 /* ============================================================================
-   Grading_exam · 视觉体系 v2
+   Grading_exam · 视觉体系 v3 (Windows 11 Fluent System)
    ----------------------------------------------------------------------------
-   风格取向：简洁为主，一点点二次元（不要多）。
-   落点刻意收在「工具感」这一侧——这是老师要用来批量批卷的生产力工具，
-   不是消遣应用。二次元的味道只从三处渗透，不铺满：
-
-     1. 主色偏移：不用纯商务蓝，改用带紫的靛蓝 + 樱花粉点缀
-     2. 造型语汇：大圆角、柔和弥散投影、按钮轻微「弹一下」
-     3. 微观装饰：导航选中态的柔和渐变条、标题下的渐隐下划线、
-        卡片角的极小装饰点
-
-   刻意没做的（避免变成"太二次元"）：
-     · 不做萌系吉祥物、不做对话框气泡
-     · 不用亮粉/亮青撞色，不加大面积渐变背景
-     · 不加音效、不加拟人化文案
-     · 边框与分隔线仍然保留——信息密度高的工具去掉分隔会难读
-
-   色彩以 CSS 变量统一管理，便于日后整体换肤。
+   风格取向：Windows 11 Fluent 原生桌面工具质感。
+   核心原则：
+     1. 严谨正统：剔除花哨装饰与二次元粉紫渐变，采用微透冷白基底与 Windows 标准 Fluent Blue。
+     2. 现代微圆角：卡片统一 8px，按钮/控件 6px，告别原先 14px 臃肿大圆角。
+     3. 沉稳微交互：删除生硬的弹簧缩放动画，采用 WinUI 3 标准的微发光与亚像素描边。
+     4. 双模原生支持：默认微透浅色模式（Light），无缝适配深空灰暗黑模式（Dark）。
+     5. 全屏视野释放：控制台改为抽屉式（Log Drawer），默认折叠，不占任何阅卷高度。
    ============================================================================ */
 
 :root {
-  /* ---- 底色：偏冷白，比纯白柔和，长时间看不累 ---- */
-  --bg: #f6f7fb;
-  --bg-deep: #eef0f7;
+  /* ---- 底色：Windows 11 经典 Mica/Acrylic 冷灰底色 ---- */
+  --bg: #f3f3f3;
+  --bg-deep: #e8e8e8;
   --panel: #ffffff;
-  --panel-soft: #fafbff;
+  --panel-soft: #fafafa;
 
-  /* ---- 主色：靛蓝偏紫（比 #2563eb 多一点"动漫感"，但仍属商务可接受范围） ---- */
-  --accent: #6366f1;
-  --accent-deep: #4f46e5;
-  --accent-soft: #eef0ff;
-  --accent-line: #c7cbfa;
+  /* ---- 主色：Windows 11 Fluent 科技蓝 (色相 221°，稳健干练) ---- */
+  --accent: #2563eb;
+  --accent-deep: #1d4ed8;
+  --accent-soft: #eff6ff;
+  --accent-line: #bfdbfe;
 
-  /* ---- 次色：樱花粉。**只用于点缀**，不用于大面积背景 ---- */
-  --sakura: #f472b6;
-  --sakura-deep: #ec4899;
+  /* ---- 点缀色：克制典雅的深红/品红 (仅作高亮指示，绝不大面积铺陈) ---- */
+  --sakura: #db2777;
+  --sakura-deep: #be185d;
   --sakura-soft: #fdf2f8;
+  --sakura-text: #9d174d;
 
-  /* ---- 语义色 ----
-     每个色都有「亮」与「深」两支，用途严格区分：
-       --ok/--warn/--err      用于边框、图标、进度等**非文字**元素
-       --ok-text/...          用于**文字**，因为亮色文字放在同色淡底上
-                              对比度不足（实测成功 2.4:1 / 警告 2.1:1，
-                              正好卡在"能看见但费劲"的灰色地带）。
-     这一层拆分是 verify_ui.py 算出来的，不是凭感觉定的。 */
-  --ok: #047857;
-  --ok-text: #065f46;
+  /* ---- 语义色：符合 WCAG 2.1 高对比度规范 ---- */
+  --ok: #0f7b0f;
+  --ok-text: #0e6b0e;
   --ok-soft: #ecfdf5;
   --warn: #b45309;
   --warn-text: #92400e;
   --warn-soft: #fef3c7;
-  --err: #ef4444;
+  --err: #c42b1c;
   --err-text: #991b1b;
   --err-soft: #fef2f2;
-  /* 粉色只有文字用途，直接给可读的深色，不留亮色变体以免误用 */
-  --sakura-text: #9d174d;
 
-  /* ---- 文本 ---- */
-  --text: #1e2130;
-  --text-mid: #4b5169;
-  --text-dim: #8b91a8;
+  /* ---- 文本色阶 ---- */
+  --text: #1b1b1b;
+  --text-mid: #5c5c5c;
+  --text-dim: #888888;
 
-  /* ---- 描边：比 v1 更淡更冷，减少"表格感" ---- */
-  --border: #e6e8f2;
-  --border-strong: #d5d9e8;
+  /* ---- 描边：WinUI 3 亚像素微描边 ---- */
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
 
-  /* ---- 圆角：整体放大。这是"可爱但不幼稚"的主要来源 ---- */
-  --r-sm: 8px;
-  --r-md: 11px;
-  --r-lg: 14px;
-  --r-full: 999px;
+  /* ---- 圆角：适度微收敛 (卡片 8px，控件 6px) ---- */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-full: 9999px;
 
-  /* ---- 投影：短距 + 大扩散 + 低透明度 = 弥散感，避免生硬的灰块 ---- */
-  --sh-1: 0 1px 2px rgba(30, 33, 48, 0.04);
-  --sh-2: 0 2px 8px rgba(30, 33, 48, 0.06), 0 1px 2px rgba(30, 33, 48, 0.04);
-  --sh-3: 0 8px 24px rgba(79, 70, 229, 0.10), 0 2px 6px rgba(30, 33, 48, 0.05);
-  --sh-accent: 0 4px 14px rgba(99, 102, 241, 0.28);
+  /* ---- 投影：Windows 11 微投影，层次分明不发散 ---- */
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.05), 0 0 1px rgba(0, 0, 0, 0.06);
+  --sh-2: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.06);
+  --sh-3: 0 8px 24px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.06);
+  --sh-accent: 0 2px 6px rgba(37, 99, 235, 0.25);
 
-  --mono: ui-monospace, SFMono-Regular, Consolas, 'Cascadia Mono', monospace;
+  --mono: 'Cascadia Mono', Consolas, ui-monospace, SFMono-Regular, monospace;
 
-  /* 缓动：轻微回弹，用于按钮与卡片。这是"弹一下"的手感来源 */
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  /* 动效：Windows 11 敏捷收敛缓动 */
+  --ease: cubic-bezier(0.1, 0.9, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+/* ---------------------------------------------------------------- 暗黑模式 (Dark Mode) */
+[data-theme='dark'] {
+  --bg: #1f1f1f;
+  --bg-deep: #161616;
+  --panel: #2b2b2b;
+  --panel-soft: #323232;
+
+  --accent: #38bdf8;
+  --accent-deep: #0ea5e9;
+  --accent-soft: rgba(56, 189, 248, 0.14);
+  --accent-line: rgba(56, 189, 248, 0.35);
+
+  --sakura: #f472b6;
+  --sakura-deep: #ec4899;
+  --sakura-soft: rgba(244, 114, 182, 0.15);
+  --sakura-text: #fbcfe8;
+
+  --ok: #34d399;
+  --ok-text: #6ee7b7;
+  --ok-soft: rgba(16, 185, 129, 0.15);
+  --warn: #fbbf24;
+  --warn-text: #fde68a;
+  --warn-soft: rgba(245, 158, 11, 0.15);
+  --err: #f87171;
+  --err-text: #fca5a5;
+  --err-soft: rgba(239, 68, 68, 0.15);
+
+  --text: #f3f3f3;
+  --text-mid: #cccccc;
+  --text-dim: #8e8e8e;
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --sh-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --sh-3: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --sh-accent: 0 2px 8px rgba(56, 189, 248, 0.3);
 }
 
 * { box-sizing: border-box; }
@@ -89,164 +113,153 @@
 html, body, #root { height: 100%; margin: 0; }
 
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei',
-    'PingFang SC', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* 滚动条也统一成浅色细条，避免默认深色条破坏整体调性 */
-::-webkit-scrollbar { width: 10px; height: 10px; }
+/* 滚动条：Windows 11 极简自适应细滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #d8dcec;
-  border: 3px solid transparent;
+  background: rgba(120, 120, 120, 0.3);
+  border: 2px solid transparent;
   background-clip: content-box;
   border-radius: var(--r-full);
 }
-::-webkit-scrollbar-thumb:hover { background: #c2c8e0; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 120, 0.5); background-clip: content-box; }
 
-/* 尊重系统的减少动效设置 */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-/* ---------------------------------------------------------------- 布局 */
+/* ---------------------------------------------------------------- 整体框架 (全屏流式) */
 
 .app {
-  display: grid;
-  grid-template-rows: 1fr auto auto;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
 }
 
 .app-body {
-  display: grid;
-  grid-template-columns: 186px 1fr;
-  min-height: 0;
-}
-
-/* ---------------------------------------------------------------- 侧栏 */
-
-.sidebar {
-  /* 极淡的竖向渐变：从上方的靛蓝余韵过渡到中性底，制造轻微层次 */
-  background: linear-gradient(180deg, #f0f2ff 0%, #fbfbfe 42%, #fbfbfe 100%);
-  border-right: 1px solid var(--border);
-  padding: 14px 10px 10px;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex: 1 1 auto;
   min-height: 0;
-  position: relative;
   overflow: hidden;
 }
 
-/* 侧栏右下角的装饰性光晕 —— 二次元味道的主要来源，但极淡（6% 透明度）。
-   用 radial-gradient 而非图片，零资源开销且随主题变量变化。 */
-.sidebar::after {
-  content: '';
-  position: absolute;
-  right: -46px;
-  bottom: -46px;
-  width: 150px;
-  height: 150px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(244, 114, 182, 0.16) 0%, rgba(244, 114, 182, 0) 68%);
-  pointer-events: none;
+/* ---------------------------------------------------------------- Fluent 侧边栏 */
+
+.sidebar {
+  width: 196px;
+  flex: 0 0 196px;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 14px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  position: relative;
+  user-select: none;
 }
 
 .sidebar .brand {
-  padding: 2px 10px 16px;
-  letter-spacing: 0.2px;
-  position: relative;
-  z-index: 1;
+  padding: 4px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .sidebar .brand .name {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-weight: 700;
-  font-size: 14.5px;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 14px;
   color: var(--text);
+  letter-spacing: -0.2px;
 }
 
-/* 品牌标记：一个柔和渐变的小方块，代替徽标图片 */
 .sidebar .brand .mark {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--sakura) 100%);
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
-  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--sh-accent);
   position: relative;
 }
-/* 方块里挖一个白点，像"眼睛"的反光——很小的一笔，不喧宾夺主 */
 .sidebar .brand .mark::after {
   content: '';
-  position: absolute;
-  left: 5px;
-  top: 5px;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
+  background: #ffffff;
 }
 
 .sidebar .brand small {
-  display: block;
   font-weight: 400;
   color: var(--text-dim);
   font-size: 11px;
-  margin: 5px 0 0 27px;
+  margin-left: 26px;
 }
 
 .sidebar .nav-group {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-dim);
-  letter-spacing: 0.6px;
-  padding: 10px 11px 4px;
-  text-transform: uppercase;
+  padding: 10px 10px 4px;
+  letter-spacing: 0.3px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 11px;
+  gap: 10px;
+  padding: 8px 10px;
   border-radius: var(--r-md);
   cursor: pointer;
   color: var(--text-mid);
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   text-align: left;
   font-size: 13px;
   font-family: inherit;
+  font-weight: 500;
   width: 100%;
   position: relative;
-  transition: background 0.16s var(--ease), color 0.16s var(--ease),
-    transform 0.16s var(--ease-bounce);
-  z-index: 1;
+  transition: all 0.12s var(--ease);
 }
 
 .nav-item .icon {
-  width: 16px;
+  width: 18px;
   text-align: center;
   font-size: 14px;
   opacity: 0.85;
-  flex: 0 0 auto;
 }
 
-.nav-item:hover { background: rgba(99, 102, 241, 0.07); transform: translateX(2px); }
+.nav-item:hover {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+}
 
-/* 选中态：淡靛蓝底 + 左侧渐变竖条（竖条是二次元 UI 的常见语汇，克制且有效） */
+/* 选中态：WinUI 3 标准指示器 (左侧实心圆角竖条) */
 .nav-item.active {
-  background: linear-gradient(90deg, var(--accent-soft) 0%, rgba(253, 242, 248, 0.5) 100%);
-  color: var(--accent-deep);
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
   font-weight: 600;
+  box-shadow: var(--sh-1);
 }
 .nav-item.active::before {
   content: '';
@@ -255,9 +268,9 @@ body {
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
-  height: 17px;
+  height: 16px;
   border-radius: var(--r-full);
-  background: linear-gradient(180deg, var(--accent) 0%, var(--sakura) 100%);
+  background: var(--accent);
 }
 
 .nav-item .tag {
@@ -269,365 +282,487 @@ body {
   color: var(--err);
   font-weight: 600;
 }
-/* 已完成的项目用绿色，避免整列都是红"未实现"显得刺眼 */
-.nav-item .tag.done { background: var(--ok-soft); color: var(--ok); }
-
-/* ---------------------------------------------------------------- 内容区 */
-
-.content {
-  overflow: auto;
-  padding: 18px 22px 24px;
-  min-height: 0;
-  scroll-behavior: smooth;
+.nav-item .tag.done {
+  background: var(--ok-soft);
+  color: var(--ok-text);
 }
 
-/* 卡片：白底 + 淡描边 + 弥散投影。悬停时投影略增强，产生"浮起"的轻微反馈 */
+/* ---------------------------------------------------------------- 内容工作区 (最大化高度) */
+
+.content {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 18px 24px 28px;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* Fluent 卡片：微描边、8px 圆角、微立体投影 */
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 16px 18px;
-  margin-bottom: 14px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
   box-shadow: var(--sh-1);
-  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
   position: relative;
 }
-.card:hover { box-shadow: var(--sh-2); }
-
-/* 卡片右上角的装饰点：极小，只有 hover 时才明显。纯氛围，不承载信息 */
-.card::before {
-  content: '';
-  position: absolute;
-  right: 14px;
-  top: 14px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--sakura);
-  opacity: 0;
-  transition: opacity 0.25s var(--ease);
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--sh-2);
 }
-.card:hover::before { opacity: 0.5; }
 
 .card > h2 {
-  margin: 0 0 4px;
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: 0.1px;
-  display: inline-block;
-  position: relative;
-  padding-bottom: 3px;
-}
-/* 标题下的渐隐下划线：从靛蓝渐隐到透明，比整条实线轻盈 */
-.card > h2::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-  height: 2px;
-  border-radius: var(--r-full);
-  background: linear-gradient(90deg, var(--accent) 0%, rgba(244, 114, 182, 0.45) 55%, rgba(244, 114, 182, 0) 100%);
-  opacity: 0.75;
+  margin: 0 0 6px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  display: block;
+  letter-spacing: -0.1px;
 }
 
 .card > .hint {
   color: var(--text-dim);
   font-size: 12px;
-  margin: 2px 0 13px;
-  line-height: 1.65;
+  margin: 0 0 14px;
+  line-height: 1.6;
 }
 
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 18px; }
 
-/* ---------------------------------------------------------------- 表单 */
+/* ---------------------------------------------------------------- 表单控件 */
 
-.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .field label {
   font-size: 12px;
-  color: var(--text-mid);
-  font-weight: 550;
-  letter-spacing: 0.05px;
+  color: var(--text);
+  font-weight: 600;
 }
-.field .sub { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+.field .sub { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
 
 input[type='text'], input[type='password'], input[type='number'], select, textarea {
   font-family: inherit;
   font-size: 13px;
-  padding: 7px 10px;
+  padding: 7px 11px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  background: #fff;
+  border-radius: var(--r-md);
+  background: var(--panel);
   color: var(--text);
   width: 100%;
-  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease),
-    background 0.16s var(--ease);
+  transition: all 0.12s var(--ease);
+  outline: none;
 }
-input::placeholder, textarea::placeholder { color: #b8bdd0; }
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
 input:hover:not(:focus), select:hover:not(:focus), textarea:hover:not(:focus) {
-  border-color: #c3c8de;
+  border-color: var(--text-mid);
 }
 
-/* 聚焦光圈用主色的柔光，比 v1 的硬蓝框更"柔" */
 input:focus, select:focus, textarea:focus {
-  outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.13);
-  background: var(--panel-soft);
+  box-shadow: 0 0 0 2px var(--accent-line);
+  background: var(--panel);
 }
 
-textarea { resize: vertical; min-height: 70px; line-height: 1.62; }
+textarea { resize: vertical; min-height: 72px; line-height: 1.6; }
 
 select {
   appearance: none;
-  /* 自绘下拉箭头：默认箭头在深色下不可控，且样式老旧 */
-  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%238b91a8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23888888' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
-  padding-right: 30px;
+  padding-right: 32px;
 }
 
-/* ---------------------------------------------------------------- 按钮 */
+/* ---------------------------------------------------------------- 按钮标准 */
 
 button {
   font-family: inherit;
   font-size: 13px;
-  padding: 7px 14px;
-  border-radius: var(--r-sm);
+  padding: 6px 14px;
+  border-radius: var(--r-md);
   border: 1px solid var(--border-strong);
-  background: #fff;
+  background: var(--panel);
   color: var(--text);
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.15s var(--ease), border-color 0.15s var(--ease),
-    color 0.15s var(--ease), box-shadow 0.15s var(--ease),
-    transform 0.12s var(--ease-bounce);
+  transition: all 0.12s var(--ease);
+  box-shadow: var(--sh-1);
 }
 
 button:hover:not(:disabled) {
   background: var(--panel-soft);
-  border-color: var(--accent-line);
-  color: var(--accent-deep);
-  transform: translateY(-1px);
-  box-shadow: var(--sh-1);
+  border-color: var(--border-strong);
+  box-shadow: var(--sh-2);
 }
-/* 按下时"压回去"——这是按钮手感的关键一笔 */
-button:active:not(:disabled) { transform: translateY(0) scale(0.985); box-shadow: none; }
+
+button:active:not(:disabled) {
+  background: var(--bg-deep);
+  box-shadow: none;
+}
 
 button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 2px var(--accent-line);
 }
 
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 button.primary {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+  background: var(--accent);
   border-color: transparent;
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
   box-shadow: var(--sh-accent);
 }
 button.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #7376f5 0%, var(--accent) 100%);
-  color: #fff;
-  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.36);
+  background: var(--accent-deep);
+  color: #ffffff;
 }
 
-button.danger { border-color: #f7c9c9; color: var(--err); }
-button.danger:hover:not(:disabled) { background: var(--err-soft); border-color: #f1a8a8; color: var(--err); }
+button.danger {
+  border-color: rgba(196, 43, 28, 0.3);
+  color: var(--err-text);
+  background: var(--err-soft);
+}
+button.danger:hover:not(:disabled) {
+  background: #fecaca;
+  color: var(--err-text);
+}
 
 button.ghost {
   border-color: transparent;
   background: transparent;
   color: var(--accent);
   padding: 5px 8px;
+  box-shadow: none;
 }
-button.ghost:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-deep); }
+button.ghost:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
 
-/* 拾取成功态（SPEC F1.2 / F1.9）：绿底 + 呼吸感边框 */
 button.picked {
   background: var(--ok-soft);
   border-color: var(--ok);
   color: var(--ok-text);
   font-weight: 600;
 }
-button.picked:hover:not(:disabled) { background: #dcfce7; border-color: var(--ok); color: var(--ok-text); }
 
-/* 正在等待拾取的项目：柔和脉冲，提示"现在去页面点一下" */
 button.picking {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent-deep);
-  animation: pulse-soft 1.5s var(--ease) infinite;
+  animation: pulse-soft 1.8s var(--ease) infinite;
 }
 @keyframes pulse-soft {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35); }
-  50% { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-line); }
+  50% { box-shadow: 0 0 0 4px transparent; }
 }
 
-.row { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+/* 按钮别名适配 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.12s var(--ease);
+  box-shadow: var(--sh-1);
+}
+.btn:hover:not(:disabled) {
+  background: var(--panel-soft);
+  box-shadow: var(--sh-2);
+}
+.btn:active:not(:disabled) {
+  background: var(--bg-deep);
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: var(--sh-accent);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-deep);
+  color: #ffffff;
+}
+
+.btn-secondary {
+  background: var(--panel);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--panel-soft);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row.end { justify-content: flex-end; }
 .spacer { flex: 1; }
 
-/* -------------------------------------------------------------- 日志条 */
+/* ---------------------------------------------------------------- Fluent 抽屉式控制台 */
 
 .logbar {
   border-top: 1px solid var(--border);
-  /* 用偏蓝的深色而非纯黑，与整体冷色调统一 */
-  background: #16171e;
-  color: #c9cddd;
+  background: var(--panel);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 11.5px;
-  line-height: 1.65;
-  height: 190px;
+  line-height: 1.6;
+  height: 220px;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  transition: height 0.18s var(--ease), opacity 0.18s var(--ease);
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
 }
-.logbar.collapsed { height: 33px; }
+
+.logbar.collapsed {
+  height: 0 !important;
+  overflow: hidden !important;
+  border-top: none !important;
+  opacity: 0;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+}
 
 .logbar-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
-  border-bottom: 1px solid #242633;
-  background: #111219;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-soft);
   flex: 0 0 auto;
+  user-select: none;
 }
+
 .logbar-head .title {
-  color: #e4e6f0;
+  color: var(--text);
   font-weight: 600;
-  font-size: 11.5px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   gap: 7px;
 }
-/* 标题前的小圆点，按日志级别变色（见 StatusBar/LogBar 逻辑） */
-.logbar-head .title::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.7);
+
+.logbar-head .title .log-icon {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-weight: 700;
 }
+
 .logbar-head button {
-  background: transparent;
-  border: 1px solid #333646;
-  color: #9ba2b8;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
   font-size: 11px;
-  padding: 3px 9px;
-  border-radius: var(--r-full);
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  box-shadow: none;
+  cursor: pointer;
 }
 .logbar-head button:hover:not(:disabled) {
-  background: #232533;
-  border-color: #464a5e;
-  color: #d8dbe8;
-  transform: none;
-  box-shadow: none;
+  background: var(--bg-deep);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.logbar-head button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.logbar-head button.close-btn {
+  padding: 2px 6px;
+  font-weight: 700;
 }
 
-.logbar-body { overflow: auto; padding: 7px 12px; flex: 1 1 auto; min-height: 0; }
-.logline { white-space: pre-wrap; word-break: break-all; }
-.logline .t { color: #6b7186; }
-.logline.info  { color: #c9cddd; }
-.logline.ok    { color: #6ee7b7; }
-.logline.warn  { color: #fcd34d; }
-.logline.error { color: #fca5a5; }
-.logbar-body .empty { color: #4d5265; font-style: italic; }
+.logbar-body {
+  overflow: auto;
+  padding: 8px 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--panel);
+}
 
-/* -------------------------------------------------------------- 状态栏 */
+.logline {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 2px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.logline .t {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.logline .tag {
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.logline .tag.tag-info { background: var(--accent-soft); color: var(--accent-deep); }
+.logline .tag.tag-ok { background: var(--ok-soft); color: var(--ok-text); }
+.logline .tag.tag-warn { background: var(--warn-soft); color: var(--warn-text); }
+.logline .tag.tag-error { background: var(--err-soft); color: var(--err-text); }
+
+.logline.info  { color: var(--text); }
+.logline.ok    { color: var(--ok-text); }
+.logline.warn  { color: var(--warn-text); }
+.logline.error { color: var(--err-text); font-weight: 500; }
+.logline .msg  { flex: 1 1 auto; }
+.logbar-body .empty { color: var(--text-dim); font-style: italic; padding: 12px 0; }
+
+/* ---------------------------------------------------------------- 底部状态栏 */
 
 .statusbar {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 6px 14px;
+  padding: 5px 14px;
   background: var(--panel);
   border-top: 1px solid var(--border);
   font-size: 11.5px;
   color: var(--text-dim);
+  flex: 0 0 auto;
+  user-select: none;
 }
 .statusbar .kv { display: flex; gap: 5px; align-items: center; }
 .statusbar .kv b { color: var(--text); font-weight: 600; font-family: var(--mono); }
 .statusbar .ok { color: var(--ok); }
 .statusbar .warn { color: var(--warn); }
 
-/* ---------------------------------------------------------------- 徽标 */
+/* ---------------------------------------------------------------- 状态徽章 */
 
 .badge {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border-radius: var(--r-full);
-  background: #f0f2f8;
+  border-radius: var(--r-sm);
+  background: var(--bg-deep);
   color: var(--text-mid);
   font-size: 11px;
   font-family: var(--mono);
   font-weight: 500;
+  border: 1px solid transparent;
 }
-.badge.green { background: var(--ok-soft); color: var(--ok-text); }
-.badge.amber { background: var(--warn-soft); color: var(--warn-text); }
-.badge.gray  { background: #f0f2f8; color: #9aa0b4; }
+.badge.green { background: var(--ok-soft); color: var(--ok-text); border-color: rgba(15, 123, 15, 0.2); }
+.badge.amber { background: var(--warn-soft); color: var(--warn-text); border-color: rgba(180, 83, 9, 0.2); }
+.badge.gray  { background: var(--bg-deep); color: var(--text-dim); }
 .badge.pink  { background: var(--sakura-soft); color: var(--sakura-text); }
-.badge.blue  { background: var(--accent-soft); color: var(--accent-deep); }
+.badge.blue  { background: var(--accent-soft); color: var(--accent-deep); border-color: var(--accent-line); }
+.badge.slate { background: var(--bg-deep); color: var(--text-mid); }
+.badge.red   { background: var(--err-soft); color: var(--err-text); border-color: rgba(196, 43, 28, 0.2); }
 
 /* ---------------------------------------------------------------- 提示条 */
 
-/* 提示条用左侧渐变竖条代替整块底色，视觉更轻 */
 .notice {
-  border-left: 3px solid transparent;
-  border-image: linear-gradient(180deg, var(--warn) 0%, rgba(245, 158, 11, 0.35) 100%) 1;
+  border-left: 3px solid var(--warn);
   background: var(--warn-soft);
   padding: 10px 14px;
   border-radius: 0 var(--r-md) var(--r-md) 0;
   font-size: 12px;
   color: var(--warn-text);
-  margin-bottom: 13px;
-  line-height: 1.7;
+  margin-bottom: 14px;
+  line-height: 1.6;
 }
 .notice.info {
-  border-image: linear-gradient(180deg, var(--accent) 0%, rgba(99, 102, 241, 0.35) 100%) 1;
+  border-left-color: var(--accent);
   background: var(--accent-soft);
-  color: #3730a3;
+  color: var(--accent-deep);
 }
 .notice.ok {
-  border-image: linear-gradient(180deg, var(--ok) 0%, rgba(16, 185, 129, 0.35) 100%) 1;
+  border-left-color: var(--ok);
   background: var(--ok-soft);
   color: var(--ok-text);
 }
+.notice.err {
+  border-left-color: var(--err);
+  background: var(--err-soft);
+  color: var(--err-text);
+}
 
-/* ------------------------------------------------------ 空态与占位面板 */
+.warn-line {
+  margin-top: 5px;
+  padding-left: 8px;
+  border-left: 2px solid var(--warn);
+  color: var(--warn-text);
+  font-size: 12px;
+  line-height: 1.6;
+}
 
-/* 未实现的面板：给一个明确的"待建"视觉，而不是空白页让人困惑 */
+/* ---------------------------------------------------------------- 空状态 */
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 52px 24px;
+  padding: 48px 24px;
   text-align: center;
   color: var(--text-dim);
 }
 .empty-state .glyph {
-  width: 54px;
-  height: 54px;
-  border-radius: var(--r-lg);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-md);
   display: grid;
   place-items: center;
-  font-size: 24px;
-  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--sakura-soft) 100%);
+  font-size: 22px;
+  background: var(--bg-deep);
   border: 1px solid var(--border);
-  box-shadow: var(--sh-1);
+  color: var(--text-mid);
 }
-.empty-state .title { font-size: 14px; font-weight: 600; color: var(--text-mid); }
-.empty-state .desc { font-size: 12px; line-height: 1.75; max-width: 430px; }
+.empty-state .title { font-size: 14px; font-weight: 600; color: var(--text); }
+.empty-state .desc { font-size: 12px; line-height: 1.6; max-width: 420px; }
+.empty-state.small { padding: 16px 10px; }
+.empty-state.small .glyph { font-size: 20px; width: 36px; height: 36px; }
 
-/* -------------------------------------------------- 拾取状态小部件 */
+/* ---------------------------------------------------------------- 拾取网格 */
 
 .pick-grid {
   display: grid;
@@ -635,13 +770,12 @@ button.picking {
   gap: 10px;
   margin-top: 4px;
 }
-
 .pick-slot {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 10px 12px;
   background: var(--panel-soft);
-  transition: border-color 0.18s var(--ease), background 0.18s var(--ease);
+  transition: all 0.12s var(--ease);
 }
 .pick-slot.filled { border-color: var(--ok); background: var(--ok-soft); }
 .pick-slot.pending { border-color: var(--accent); background: var(--accent-soft); }
@@ -649,49 +783,45 @@ button.picking {
 .pick-slot .name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-mid);
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 .pick-slot .detail {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--text-dim);
-  line-height: 1.65;
+  line-height: 1.5;
   word-break: break-all;
 }
 .pick-slot.filled .detail { color: var(--ok-text); }
 
-/* ------------------------------------------------------- 模式选择卡 */
+/* ---------------------------------------------------------------- 模式选择 */
 
-/* 三种批阅模式用卡片式单选，比下拉更直观（要选的东西简单且语义重要） */
 .mode-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-
 .mode-card {
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
-  padding: 11px 13px;
-  background: #fff;
+  padding: 12px 14px;
+  background: var(--panel);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.18s var(--ease), background 0.18s var(--ease),
-    box-shadow 0.18s var(--ease), transform 0.12s var(--ease-bounce);
+  transition: all 0.12s var(--ease);
 }
 .mode-card:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  transform: translateY(-1px);
+  border-color: var(--accent);
   box-shadow: var(--sh-2);
 }
 .mode-card.active {
   border-color: var(--accent);
-  background: linear-gradient(160deg, var(--accent-soft) 0%, rgba(253, 242, 248, 0.55) 100%);
-  box-shadow: var(--sh-3);
+  background: var(--accent-soft);
+  box-shadow: var(--sh-1);
 }
 .mode-card .mc-name {
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text);
   display: flex;
   align-items: center;
@@ -699,20 +829,18 @@ button.picking {
   margin-bottom: 4px;
 }
 .mode-card.active .mc-name { color: var(--accent-deep); }
-.mode-card .mc-desc { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
-
-/* 危险模式的警示角标 */
+.mode-card .mc-desc { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
 .mode-card .mc-warn {
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: var(--r-full);
+  border-radius: var(--r-sm);
   background: var(--warn-soft);
   color: var(--warn-text);
   font-weight: 600;
   margin-left: auto;
 }
 
-/* ------------------------------------------------------------ 进度条 */
+/* ---------------------------------------------------------------- 进度条 */
 
 .progress {
   height: 6px;
@@ -725,11 +853,11 @@ button.picking {
   display: block;
   height: 100%;
   border-radius: var(--r-full);
-  background: linear-gradient(90deg, var(--accent) 0%, var(--sakura) 100%);
-  transition: width 0.35s var(--ease);
+  background: var(--accent);
+  transition: width 0.3s var(--ease);
 }
 
-/* ------------------------------------------------------------ 表格 */
+/* ---------------------------------------------------------------- 数据表格 */
 
 table.data {
   width: 100%;
@@ -756,31 +884,19 @@ table.data td {
 table.data tr:last-child td { border-bottom: none; }
 table.data tbody tr:hover td { background: var(--panel-soft); }
 
-/* -------------------------------------------------- 数字用等宽对齐 */
-
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .dim { color: var(--text-dim); }
 .mono { font-family: var(--mono); }
 
-/* ==========================================================================
-   单题批改面板（Phase 4）
-   ==========================================================================
-   下面这些类是 SinglePanel 依赖但此前**并不存在**的。
-   后果不是报错，而是元素回退成浏览器默认样式：按钮变成灰白方块、
-   并排字段竖着堆、结果区挤成一团。界面"能显示"但完全不可用——
-   这类缺陷抓不到的原因是没有断言，所以 verify_ui.py 现在会核对类是否存在。
-   ========================================================================== */
+/* ---------------------------------------------------------------- 分段控件 */
 
-/* 并排字段：`.field` 默认是竖排 flex，用在 .row 里需要让它自适应宽度 */
 .row > .field { margin-bottom: 0; flex: 0 1 auto; min-width: 140px; }
 .field.inline { flex: 1 1 180px; }
 
-/* 分段控件（录入方式切换）。用 flex 而不是绝对定位：
-   按钮数量可能变，固定定位一加按钮就错位 */
 .segmented {
   display: inline-flex;
   gap: 2px;
-  padding: 3px;
+  padding: 2px;
   background: var(--bg-deep);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -791,62 +907,42 @@ table.data tbody tr:hover td { background: var(--panel-soft); }
   background: transparent;
   color: var(--text-mid);
   font-size: 12px;
-  font-weight: 550;
-  padding: 5px 12px;
+  font-weight: 500;
+  padding: 4px 12px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  box-shadow: none;
+  transition: all 0.1s var(--ease);
 }
-.seg:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+.seg:hover:not(:disabled) { background: var(--panel-soft); color: var(--text); }
 .seg.active {
   background: var(--panel);
-  border-color: var(--accent-line);
+  border-color: var(--border);
   color: var(--accent-deep);
+  font-weight: 600;
   box-shadow: var(--sh-1);
 }
 .seg:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* 错误提示。与 .notice.info/.ok 同一套结构，只换配色。
-   用 --err 做边框、--err-text 做文字：浅色 --err 当文字对比度不达标 */
-.notice.err {
-  border-color: var(--err);
-  background: var(--err-soft);
-  color: var(--err-text);
-}
-
-/* 警告行：解析警告、模型自述问题。左侧竖条比整块背景更轻，
-   因为一屏里可能出现好几条，块状背景会把界面压得很重 */
-.warn-line {
-  margin-top: 5px;
-  padding-left: 9px;
-  border-left: 2px solid var(--warn);
-  color: var(--warn-text);
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-/* 解析出的原始文本预览。限高 + 滚动：
-   把整篇试卷铺开会把结果区顶到屏幕之外 */
 .text-preview {
-  margin: 7px 0 0;
+  margin: 8px 0 0;
   padding: 10px 12px;
   max-height: 220px;
   overflow: auto;
   background: var(--panel-soft);
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   font-family: var(--mono);
   font-size: 11.5px;
-  line-height: 1.7;
+  line-height: 1.6;
   color: var(--text-mid);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* 结果卡片 */
 .result {
-  margin-top: 13px;
-  padding: 13px 15px;
+  margin-top: 14px;
+  padding: 14px 16px;
   background: var(--panel-soft);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -854,9 +950,9 @@ table.data tbody tr:hover td { background: var(--panel-soft); }
 .result-head {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 9px;
+  margin-bottom: 8px;
 }
 .result .score {
   font-family: var(--mono);
@@ -864,57 +960,28 @@ table.data tbody tr:hover td { background: var(--panel-soft); }
   font-size: 22px;
   font-weight: 700;
   color: var(--accent-deep);
-  letter-spacing: -0.4px;
 }
 .result .comment {
-  margin: 0 0 9px;
+  margin: 0 0 8px;
   font-size: 13px;
-  line-height: 1.8;
-  color: var(--text-mid);
+  line-height: 1.7;
+  color: var(--text);
   white-space: pre-wrap;
 }
 .result h3 {
-  margin: 11px 0 4px;
+  margin: 10px 0 4px;
   font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-mid);
+  font-weight: 600;
+  color: var(--text);
 }
 .result ul {
   margin: 0;
-  padding-left: 19px;
+  padding-left: 18px;
   font-size: 12.5px;
-  line-height: 1.9;
+  line-height: 1.8;
   color: var(--text-mid);
 }
 
-/* 紧凑空态。整页空态（.empty-state）在卡片里太高，
-   会让人以为页面出问题了 */
-.empty-state.small { padding: 18px 12px; }
-.empty-state.small .glyph { font-size: 22px; }
-
-/* ------------------------------------------------------ 复核队列（P1-8） */
-
-/*
- * 复核队列用到的补充类。
- *
- * ⚠ 这几个类要单独说明的原因：**未定义的类不会报错**，
- * 元素静默回退成浏览器默认样式——按钮变成灰白方块、badge 全都长一样，
- * 而截图里仍然"有内容"、对比度检查也照样过（AGENTS §7.4）。
- * `pnpm ui:verify` 会断言这里用到的静态类都有定义。
- *
- * 配色规则沿用全局约定：`--ok/--warn/--err` 只用于**非文字**
- * （边框、图标、侧条），文字一律用 `*-text` 变体，否则对比度不达标。
- */
-
-/* 中性状态标签：用于"极端分数""学科"这类既非警告也非成功的标记。
-   刻意不用 gray 的 #9aa0b4 文字色——那个对比度只有 3.1:1，不到 AA。 */
-.badge.slate { background: #eef0f7; color: var(--text-mid); }
-
-/* 高风险理由标签：图片质量差、客观题可疑 —— 这类错误的代价最高 */
-.badge.red { background: var(--err-soft); color: var(--err-text); }
-
-/* 行内文字按钮：用于卡片右上角的"处理/收起"。
-   它不是主操作，做成实心按钮会和"保存分数"抢注意力。 */
 button.link-btn {
   border: none;
   background: none;
@@ -926,13 +993,8 @@ button.link-btn {
 }
 button.link-btn:hover:not(:disabled) {
   background: var(--accent-soft);
-  box-shadow: none;
 }
-button.link-btn:active:not(:disabled) { transform: none; }
 
-/* 可点击的评分点标签。
-   用 badge 外观 + 按钮行为：评分点的"命中/未命中"本身就该用标签表达；
-   加 hover 边框说明它可点，避免看起来只是装饰。 */
 button.badge {
   border: 1px solid transparent;
   cursor: pointer;

@@ -40,6 +40,8 @@ interface State {
    * 题目定义对不上，留着比清掉更容易误导人。
    */
   lastReport: PaperReport | null;
+  /** 控制台抽屉开关（默认隐藏，把全屏视野留给阅卷） */
+  isLogOpen: boolean;
 
   setPage: (p: PageKey) => void;
   setLastReport: (r: PaperReport | null) => void;
@@ -47,6 +49,9 @@ interface State {
   setLogs: (l: LogEntry[]) => void;
   setUsage: (u: TokenUsage) => void;
   setAppInfo: (i: AppInfo) => void;
+  toggleLog: () => void;
+  setLogOpen: (open: boolean) => void;
+  clearLogs: () => void;
 }
 
 /**
@@ -62,6 +67,7 @@ export const useStore = create<State>((set) => ({
   appInfo: null,
   ready: false,
   lastReport: null,
+  isLogOpen: false,
 
   setPage: (page) => set({ page }),
 
@@ -78,6 +84,12 @@ export const useStore = create<State>((set) => ({
   setUsage: (usage) => set({ usage }),
 
   setAppInfo: (appInfo) => set({ appInfo, ready: true }),
+
+  toggleLog: () => set((s) => ({ isLogOpen: !s.isLogOpen })),
+
+  setLogOpen: (isLogOpen) => set({ isLogOpen }),
+
+  clearLogs: () => set({ logs: [] }),
 }));
 
 /** 可选：顺序编号，便于日志面板对齐 */

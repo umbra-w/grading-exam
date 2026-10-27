@@ -15,20 +15,19 @@ const PICK_LABELS: Array<{ kind: PickKind; label: string }> = [
 
 /**
  * 底部状态栏。
- *
- * 本轮改动：此前三项拾取状态是**写死的**「未拾取」灰标，
- * 无论实际拾取与否都不变——状态栏在说谎。
- * 现改为订阅 evt:pick 并读一次已有状态，真实反映。
  */
 export function StatusBar(): JSX.Element {
   const info = useStore((s) => s.appInfo);
   const usage = useStore((s) => s.usage);
+  const logs = useStore((s) => s.logs);
+  const isLogOpen = useStore((s) => s.isLogOpen);
+  const toggleLog = useStore((s) => s.toggleLog);
+
   const [picks, setPicks] = useState<Partial<Record<PickKind, PickResult>>>({});
 
   useEffect(() => {
     let alive = true;
 
-    // 先读一次现状：面板可能在别的页签里已经拾取过，切回来不能显示成"未拾取"
     void (async () => {
       const st = await window.gradingExam.pickerState();
       if (alive) setPicks(st.picks ?? {});
@@ -45,6 +44,27 @@ export function StatusBar(): JSX.Element {
   }, []);
 
   const doneCount = PICK_LABELS.filter((p) => picks[p.kind]).length;
+  const errCount = logs.filter((l) => l.level === 'error').length;
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof document !== 'undefined') {
+      return (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') || 'light';
+    }
+    return 'light';
+  });
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', next);
+    }
+    try {
+      localStorage.setItem('ge_theme', next);
+    } catch {
+      // 忽略
+    }
+  };
 
   return (
     <div className="statusbar">
@@ -63,7 +83,7 @@ export function StatusBar(): JSX.Element {
 
       <span className="spacer" />
 
-      {/* 拾取配置的真实状态（SPEC F1.2 / F1.8） */}
+      {/* 拾取配置的真实状态 */}
       {PICK_LABELS.map((p) => {
         const r = picks[p.kind];
         return (
@@ -93,7 +113,32 @@ export function StatusBar(): JSX.Element {
 
       <button
         className="btn btn-secondary"
-        style={{ padding: '1px 6px', fontSize: 11, marginLeft: 8 }}
+        style={{
+          padding: '1px 8px',
+          fontSize: 11,
+          marginLeft: 8,
+          borderColor: errCount > 0 ? 'var(--err)' : undefined,
+          color: errCount > 0 ? 'var(--err-text)' : undefined,
+          background: isLogOpen ? 'var(--bg-deep)' : undefined,
+        }}
+        onClick={toggleLog}
+        title="展开/收起底部运行控制台 (可查看详细调用与网络日志)"
+      >
+        ❯_ 控制台 {errCount > 0 ? `(${errCount} 错误)` : `(${logs.length})`}
+      </button>
+
+      <button
+        className="btn btn-secondary"
+        style={{ padding: '1px 8px', fontSize: 11, marginLeft: 4 }}
+        onClick={toggleTheme}
+        title="切换 Fluent 浅色 / 暗黑主题"
+      >
+        {theme === 'dark' ? '🌙 深色' : '☀️ 浅色'}
+      </button>
+
+      <button
+        className="btn btn-secondary"
+        style={{ padding: '1px 6px', fontSize: 11, marginLeft: 4 }}
         onClick={() => {
           void window.gradingExam.windowCompact(true);
         }}
